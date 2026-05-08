@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.config
+
+# Database
+data/
+db/
+*.db
+
+# Build output
+dist/

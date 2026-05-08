@@ -1,0 +1,9 @@
+services:
+  auto-deploy:
+    build:
+      context: https://github.com/norenaboi/auto-deploy.git#main
+      dockerfile: Dockerfile
+    container_name: auto-deploy
+    restart: always
+    ports:
+      - "3000:3000"
