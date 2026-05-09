@@ -95,7 +95,7 @@ webhookRouter.post(
   },
 );
 
-router.get("/history/id/:id", verifySession, (req: Request, res: Response) => {
+router.get("/deploy/id/:id", verifySession, (req: Request, res: Response) => {
   if (typeof req.params.id !== "string") {
     return res.status(400).send("Invalid id");
   }
@@ -105,39 +105,18 @@ router.get("/history/id/:id", verifySession, (req: Request, res: Response) => {
   return res.send(deploy);
 });
 
-router.get(
-  "/history/name/:repo",
-  verifySession,
-  (req: Request, res: Response) => {
-    if (typeof req.params.repo !== "string") {
-      return res.status(400).send("Invalid repo name");
-    }
-    const repoName: string = req.params.repo;
-    const deploys = db.getDeploysByName(repoName);
-    if (deploys.length === 0)
-      return res.status(404).send("No deploys found by the repo " + repoName);
-    return res.send(deploys);
-  },
-);
+router.get("/deploy/:name", verifySession, (req: Request, res: Response) => {
+  if (typeof req.params.name !== "string") {
+    return res.status(400).send("Invalid repo name");
+  }
+  const repoName: string = req.params.name;
+  const deploys = db.getDeploysByName(repoName);
+  if (deploys.length === 0)
+    return res.status(404).send("No deploys found by the repo " + repoName);
+  return res.send(deploys);
+});
 
-router.get(
-  "/history/sha/:commitsha",
-  verifySession,
-  (req: Request, res: Response) => {
-    if (typeof req.params.commitsha !== "string") {
-      return res.status(400).send("Invalid commit sha");
-    }
-    const commitSha: string = req.params.commitsha;
-    const deploy = db.getDeployByCommitSha(commitSha);
-    if (!deploy)
-      return res
-        .status(404)
-        .send("No deploy found by the commit sha " + commitSha);
-    return res.send(deploy);
-  },
-);
-
-router.get("/history/deploys", verifySession, (req: Request, res: Response) => {
+router.get("/deploy", verifySession, (req: Request, res: Response) => {
   const deploys = db.getAllDeploys();
   if (deploys.length === 0) return res.status(404).send("No deploys found");
   return res.send(deploys);
@@ -158,11 +137,11 @@ router.post(
   },
 );
 
-router.post("/deploy/:repo", verifySession, (req: Request, res: Response) => {
-  if (typeof req.params.repo !== "string") {
-    return res.status(400).send("Invalid repo name");
+router.post("/deploy/:name", verifySession, (req: Request, res: Response) => {
+  if (typeof req.params.name !== "string") {
+    return res.status(400).send("Invalid name");
   }
-  const repoName: string = req.params.repo;
+  const repoName: string = req.params.name;
   try {
     const config = getConfig(repoName);
     queueDeploy(config);

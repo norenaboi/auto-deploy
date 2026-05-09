@@ -62,10 +62,6 @@ const stmtGetDeployById = db.prepare<[number], Deploy | undefined>(
   `SELECT * FROM deploys WHERE id = ?`,
 );
 
-const stmtGetDeployByCommitSha = db.prepare<[string], Deploy | undefined>(
-  `SELECT * FROM deploys WHERE commit_sha = ?`,
-);
-
 const stmtGetDeploysByName = db.prepare<[string], Deploy>(
   `SELECT * FROM deploys WHERE repo = ?`,
 );
@@ -135,10 +131,6 @@ export function getAllDeploys(): Deploy[] {
 
 export function getDeployById(id: number): Deploy | undefined {
   return stmtGetDeployById.get(id);
-}
-
-export function getDeployByCommitSha(commit_sha: string): Deploy | undefined {
-  return stmtGetDeployByCommitSha.get(commit_sha);
 }
 
 export function getDeploysByName(name: string): Deploy[] {

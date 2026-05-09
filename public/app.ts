@@ -77,7 +77,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 
 async function fetchAllDeploys(): Promise<Deploy[]> {
   try {
-    return await apiFetch<Deploy[]>("/history/deploys");
+    return await apiFetch<Deploy[]>("/deploy");
   } catch {
     // 404 just means no deploys yet — anything else is a real error
     return [];
@@ -86,9 +86,7 @@ async function fetchAllDeploys(): Promise<Deploy[]> {
 
 async function fetchDeploysByName(repo: string): Promise<Deploy[]> {
   try {
-    return await apiFetch<Deploy[]>(
-      `/history/name/${encodeURIComponent(repo)}`,
-    );
+    return await apiFetch<Deploy[]>(`/deploy/${encodeURIComponent(repo)}`);
   } catch {
     return [];
   }
