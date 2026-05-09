@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import * as db from "./db";
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import { Config, Deploy } from "./types";
 
 // Queue maps
@@ -44,9 +45,16 @@ export function deploy(deployObj: Deploy, config: Config) {
   const emitter = new EventEmitter();
   deployEmitters.set(deployId, emitter);
 
-  const proc = spawn("git pull && docker compose up -d --build", {
+  if (!existsSync(dirPath)) {
+    const errLine = `[runner error] Deploy path does not exist: ${dirPath}`;
+    db.createLog(deployId, errLine, Date.now());
+    emitter.emit("log", errLine);
+    finalize("failed");
+    return;
+  }
+
+  const proc = spawn("docker", ["compose", "up", "-d", "--build"], {
     cwd: dirPath,
-    shell: true,
   });
 
   function handleChunk(chunk: Buffer) {

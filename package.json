@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --ignore dist/ --exec \"ts-node src/server.ts\" --ext ts,html,css",
-    "build": "tsc",
+    "dev": "nodemon --ignore dist/ --exec \"tsc -p tsconfig.client.json && copyfiles -u 1 'public/**/*.html' 'public/**/*.css' 'public/*.ico' dist/public && ts-node src/server.ts\" --ext ts,html,css",
+    "build": "tsc && tsc -p tsconfig.client.json && copyfiles -u 1 'public/**/*.html' 'public/**/*.css' 'public/*.ico' dist/public",
     "start": "node dist/src/server.js"
   },
   "keywords": [],
@@ -24,6 +24,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.2",
+    "copyfiles": "^2.4.1",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"

@@ -3,11 +3,12 @@
     "target": "ES2020",
     "module": "CommonJS",
     "rootDir": "./src",
-    "outDir": "./dist",
+    "outDir": "./dist/src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "public"]
+  "exclude": ["node_modules", "dist", "public"],
+  "references": [{ "path": "./tsconfig.client.json" }],
 }

@@ -80,6 +80,10 @@ const stmtInsertLog = db.prepare<{
   `INSERT INTO logs (deploy_id, line, logged_at) VALUES (@deploy_id, @line, @logged_at)`,
 );
 
+const stmtGetLogById = db.prepare<[number], Log>(
+  `SELECT * FROM logs WHERE id = ?`,
+);
+
 const stmtGetLogsByDeployId = db.prepare<[number], Log>(
   `SELECT * FROM logs WHERE deploy_id = ?`,
 );
@@ -147,7 +151,7 @@ export function createLog(
   logged_at: number,
 ): Log {
   const { lastInsertRowid } = stmtInsertLog.run({ deploy_id, line, logged_at });
-  return stmtGetLogsByDeployId.get(Number(lastInsertRowid)) as Log;
+  return stmtGetLogById.get(Number(lastInsertRowid)) as Log;
 }
 
 export function getAllLogs(): Log[] {

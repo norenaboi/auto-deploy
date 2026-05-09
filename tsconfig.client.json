@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2022",
+    "rootDir": "./public",
+    "outDir": "./dist/public",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "composite": true,
+    "lib": ["ES2020", "DOM"],
+  },
+  "include": ["public/**/*.ts", "public/**/*.html", "public/**/*.css"],
+  "exclude": ["node_modules", "dist"],
+}
