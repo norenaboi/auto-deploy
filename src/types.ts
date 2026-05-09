@@ -3,7 +3,7 @@ export type Deploy = {
   repo: string;
   branch: string;
   commit_sha: string;
-  status: "pending" | "running" | "success" | "failed";
+  status: "pending" | "running" | "success" | "failed" | "stopped";
   created_at: number;
   started_at: number | null;
   finished_at: number | null;

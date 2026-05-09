@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import * as db from "./db";
-import { spawn } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { Config, Deploy } from "./types";
 
@@ -10,6 +10,9 @@ const running = new Map<string, boolean>();
 
 // One EventEmitter per active deploy — SSE clients subscribe to these
 export const deployEmitters = new Map<number, EventEmitter>();
+
+// Track running child processes so we can kill them
+const runningProcesses = new Map<number, ChildProcess>();
 
 // Queue
 export function queueDeploy(config: Config, sha256?: string) {
@@ -45,6 +48,8 @@ export function deploy(deployObj: Deploy, config: Config) {
   const emitter = new EventEmitter();
   deployEmitters.set(deployId, emitter);
 
+  let finished = false;
+
   if (!existsSync(dirPath)) {
     const errLine = `[runner error] Deploy path does not exist: ${dirPath}`;
     db.createLog(deployId, errLine, Date.now());
@@ -56,6 +61,7 @@ export function deploy(deployObj: Deploy, config: Config) {
   const proc = spawn("docker", ["compose", "up", "-d", "--build"], {
     cwd: dirPath,
   });
+  runningProcesses.set(deployId, proc);
 
   function handleChunk(chunk: Buffer) {
     const line = chunk.toString();
@@ -66,13 +72,13 @@ export function deploy(deployObj: Deploy, config: Config) {
   proc.stdout.on("data", handleChunk);
   proc.stderr.on("data", handleChunk);
 
-  let finished = false;
-  function finalize(status: "success" | "failed") {
+  function finalize(status: "success" | "failed" | "stopped") {
     if (finished) return;
     finished = true;
     deployObj.status = status;
     deployObj.finished_at = Date.now();
     running.delete(config.name);
+    runningProcesses.delete(deployId);
     db.updateDeployStatus(deployId, status, deployObj.finished_at);
     emitter.emit("done", status);
     deployEmitters.delete(deployId);
@@ -93,6 +99,40 @@ export function deploy(deployObj: Deploy, config: Config) {
   });
 
   proc.on("close", (exitCode) => {
+    // If the process was killed intentionally, finalize() was already called
+    // with "stopped", so the `finished` flag prevents double-finalizing.
     finalize(exitCode === 0 ? "success" : "failed");
   });
+}
+
+// Stop a running deploy by its deploy ID
+export function stopDeploy(deployId: number): boolean {
+  const proc = runningProcesses.get(deployId);
+  if (!proc) return false;
+
+  const emitter = deployEmitters.get(deployId);
+  if (emitter) {
+    const stopLine = "[runner] Deploy stopped by user.";
+    db.createLog(deployId, stopLine, Date.now());
+    emitter.emit("log", stopLine);
+  }
+
+  // Mark as stopped before killing so the close handler doesn't overwrite it
+  db.updateDeployStatus(deployId, "stopped", Date.now());
+
+  // Kill the entire process group so child processes (docker compose) are also terminated
+  try {
+    process.kill(-proc.pid!, "SIGTERM");
+  } catch {
+    proc.kill("SIGTERM");
+  }
+
+  runningProcesses.delete(deployId);
+
+  if (emitter) {
+    emitter.emit("done", "stopped");
+    deployEmitters.delete(deployId);
+  }
+
+  return true;
 }

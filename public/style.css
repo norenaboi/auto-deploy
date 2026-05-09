@@ -1,0 +1,674 @@
+/* ── Variables ──────────────────────────────────────────────────────────── */
+:root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2e3248;
+    --text: #e2e8f0;
+    --text-muted: #8892a4;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #38bdf8;
+    --radius: 8px;
+    --font-mono:
+        "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace;
+}
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    overflow: hidden;
+}
+
+/* ── Page layout ─────────────────────────────────────────────────────────── */
+.page {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    height: 56px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.site-header h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.header-nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* ── Dashboard (two-column) ──────────────────────────────────────────────── */
+.dashboard {
+    display: grid;
+    grid-template-columns: 288px 1fr;
+    overflow: hidden;
+    height: 100%;
+}
+
+/* ── Deploy list panel ───────────────────────────────────────────────────── */
+.deploy-list-panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.panel-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+.deploy-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Deploy cards */
+.deploy-card {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.deploy-card:hover {
+    background: var(--surface-hover);
+}
+
+.deploy-card.selected {
+    background: var(--surface-hover);
+    border-left-color: var(--accent);
+}
+
+/* Status-coloured left border */
+.deploy-card.status-pending {
+    border-left-color: var(--warning);
+}
+.deploy-card.status-running {
+    border-left-color: var(--info);
+}
+.deploy-card.status-success {
+    border-left-color: var(--success);
+}
+.deploy-card.status-failed {
+    border-left-color: var(--danger);
+}
+
+.deploy-card.status-stopped {
+    border-left-color: var(--text-muted);
+}
+
+/* But reset it for selected so accent always wins */
+.deploy-card.selected.status-pending,
+.deploy-card.selected.status-running,
+.deploy-card.selected.status-success,
+.deploy-card.selected.status-failed {
+    border-left-color: var(--accent);
+}
+
+.card-top,
+.card-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.card-top {
+    margin-bottom: 0.25rem;
+}
+
+.card-repo {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.card-icon {
+    font-size: 0.85rem;
+}
+.card-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+.card-meta code {
+    font-family: inherit;
+}
+.card-time {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+/* ── Log panel ───────────────────────────────────────────────────────────── */
+.log-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    min-height: 52px;
+}
+
+.log-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.log-repo {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+.log-branch {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.log-duration {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.log-sha {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: var(--border);
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 0.1em 0.55em;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+.status-badge-pending {
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+    color: var(--warning);
+}
+.status-badge-running {
+    background: color-mix(in srgb, var(--info) 18%, transparent);
+    color: var(--info);
+}
+.status-badge-success {
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+    color: var(--success);
+}
+.status-badge-failed {
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    color: var(--danger);
+}
+
+.status-badge-stopped {
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+    color: var(--text-muted);
+}
+
+/* Log output */
+.log-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.log-placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+    font-family: system-ui, sans-serif;
+    font-size: 0.875rem;
+}
+
+.log-status-line {
+    display: block;
+    color: var(--text-muted);
+    font-style: italic;
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.45em 0.95em;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 0.83rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+        background 0.12s,
+        color 0.12s;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.btn:active {
+    opacity: 0.82;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+.btn-primary:hover {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    background: var(--border);
+    color: var(--text);
+}
+.btn-secondary:hover {
+    background: var(--surface-hover);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+}
+.btn-ghost:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: #fff;
+}
+
+.btn-danger:hover {
+    background: color-mix(in srgb, var(--danger) 80%, #000);
+}
+
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.log-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.28em 0.65em;
+    font-size: 0.75rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(3px);
+}
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 1.5);
+    padding: 1.75rem;
+    width: 420px;
+    max-width: calc(100vw - 2rem);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+}
+
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.modal-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.modal-form input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 0.5em 0.75em;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.15s;
+    font-family: inherit;
+    width: 100%;
+}
+.modal-form input:focus {
+    border-color: var(--accent);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.modal-error {
+    color: var(--danger);
+    font-size: 0.78rem;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border-radius: var(--radius);
+    padding: 0.4em 0.7em;
+}
+.modal-error.hidden {
+    display: none;
+}
+
+/* ── Config list (inside modal) ─────────────────────────────────────────── */
+.config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 340px;
+    overflow-y: auto;
+    margin-bottom: 0.25rem;
+}
+
+.config-list-empty {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1.5rem 0;
+}
+
+.config-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: background 0.12s;
+}
+
+.config-list-row:hover {
+    background: var(--surface-hover);
+}
+
+.config-list-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.config-list-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.config-list-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.config-list-meta code {
+    font-family: inherit;
+}
+
+.config-select-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    color: var(--text);
+    transition:
+        background 0.12s,
+        border-color 0.12s;
+}
+
+.config-select-row:hover {
+    background: var(--surface-hover);
+}
+
+.config-select-row.selected {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: var(--accent);
+}
+
+.config-select-check {
+    font-size: 0.9rem;
+    color: var(--accent);
+    opacity: 0;
+    flex-shrink: 0;
+    transition: opacity 0.12s;
+}
+
+.config-select-row.selected .config-select-check {
+    opacity: 1;
+}
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
+.empty-state {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 2.5rem 1rem;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* ── Panel header actions ────────────────────────────────────────────────── */
+.panel-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* ── Filter panel ────────────────────────────────────────────────────────── */
+.filter-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 0.65rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.filter-panel.hidden {
+    display: none;
+}
+
+.filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.filter-row-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    width: 36px;
+    flex-shrink: 0;
+}
+
+.filter-toggles {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* Filter pill buttons */
+.btn-filter-pill {
+    padding: 0.25em 0.75em;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        color 0.15s,
+        border-color 0.15s,
+        opacity 0.15s;
+    /* off state */
+    background: transparent;
+    color: var(--text-muted);
+    opacity: 0.45;
+}
+
+.btn-filter-pill:hover {
+    opacity: 0.75;
+}
+
+.btn-filter-pill.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+    opacity: 1;
+}
+
+.btn-filter-pill.active:hover {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* Filter select dropdown */
+.filter-select {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 0.3em 0.6em;
+    font-size: 0.78rem;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    min-width: 0;
+}
+
+.filter-select:focus {
+    border-color: var(--accent);
+}
+
+/* active filter indicator on the filter button */
+.btn-filter-active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

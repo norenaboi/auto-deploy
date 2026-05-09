@@ -4,9 +4,10 @@ import path from "path";
 import fs from "fs";
 import * as db from "./db";
 import { Config } from "./types";
-import { queueDeploy, deployEmitters } from "./runner";
-import { validateSession, verifySession, parseCookies } from "./middleware";
+import { queueDeploy, deployEmitters, stopDeploy } from "./runner";
+import { verifySession } from "./middleware";
 export const router = Router();
+export const webhookRouter = Router();
 
 const CONFIG_DIR = path.join(__dirname, "..", "data");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
@@ -45,11 +46,14 @@ function saveConfig(config: Config) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(configData));
 }
 
-router.post(
+webhookRouter.post(
   "/webhook/:repo",
   express.raw({ type: "*/*" }),
   (req: Request, res: Response) => {
     const raw = req.body;
+    if (req.headers["x-github-event"] === "ping") {
+      return res.send("PONG");
+    }
     if (typeof req.params.repo !== "string") {
       return res.status(400).send("Invalid repo name");
     }
@@ -138,6 +142,21 @@ router.get("/history/deploys", verifySession, (req: Request, res: Response) => {
   if (deploys.length === 0) return res.status(404).send("No deploys found");
   return res.send(deploys);
 });
+
+router.post(
+  "/deploy/stop/:deployId",
+  verifySession,
+  (req: Request, res: Response) => {
+    const deployId = parseInt(req.params.deployId as string, 10);
+    if (isNaN(deployId)) return res.status(400).send("Invalid deploy id");
+
+    const stopped = stopDeploy(deployId);
+    if (!stopped) {
+      return res.status(404).send("No running deploy found with that id");
+    }
+    return res.send("OK");
+  },
+);
 
 router.post("/deploy/:repo", verifySession, (req: Request, res: Response) => {
   if (typeof req.params.repo !== "string") {

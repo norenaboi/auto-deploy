@@ -1,0 +1,97 @@
+﻿<!doctype html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Auto Deploy</title>
+        <link rel="stylesheet" href="style.css" />
+        <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    </head>
+    <body>
+        <div class="page">
+            <header class="site-header">
+                <h1>Auto Deploy</h1>
+                <nav class="header-nav">
+                    <button id="btn-add-config" class="btn btn-secondary">
+                        &#9776; Configs
+                    </button>
+                    <button id="btn-logout" class="btn btn-ghost">
+                        Logout
+                    </button>
+                </nav>
+            </header>
+
+            <main class="dashboard">
+                <aside class="deploy-list-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Deploys</span>
+                        <div class="panel-header-actions">
+                            <button
+                                id="btn-filter"
+                                class="btn btn-ghost btn-sm"
+                                aria-expanded="false"
+                                title="Filter deploys"
+                            >
+                                &#9663; Filter
+                            </button>
+                            <button
+                                id="btn-trigger"
+                                class="btn btn-primary btn-sm"
+                            >
+                                &#9654; Run
+                            </button>
+                        </div>
+                    </div>
+                    <div id="filter-panel" class="filter-panel hidden">
+                        <div class="filter-row">
+                            <span class="filter-row-label">Type</span>
+                            <div class="filter-toggles">
+                                <button
+                                    id="filter-manual"
+                                    class="btn-filter-pill active"
+                                    type="button"
+                                >
+                                    Manual
+                                </button>
+                                <button
+                                    id="filter-auto"
+                                    class="btn-filter-pill active"
+                                    type="button"
+                                >
+                                    Auto
+                                </button>
+                            </div>
+                        </div>
+                        <div class="filter-row">
+                            <span class="filter-row-label">Repo</span>
+                            <select id="filter-repo" class="filter-select">
+                                <option value="">All repos</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="deploy-list" class="deploy-list"></div>
+                </aside>
+
+                <section class="log-panel">
+                    <div id="log-header" class="log-header"></div>
+                    <pre
+                        id="log-output"
+                        class="log-output"
+                    ><span class="log-placeholder">&#8592; Select a deploy to view logs</span></pre>
+                </section>
+            </main>
+        </div>
+
+        <!-- Modal -->
+        <div
+            id="modal-overlay"
+            class="modal-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+        >
+            <div id="modal-box" class="modal-box"></div>
+        </div>
+
+        <script type="module" src="app.js"></script>
+    </body>
+</html>
