@@ -101,8 +101,9 @@ All endpoints require a valid session cookie except `/webhook/:repo` (which has 
 | `GET` | `/deploy/id/:id` | Single deploy by ID |
 | `POST` | `/deploy/:name` | Manually trigger a deploy |
 | `POST` | `/deploy/stop/:deployId` | Stop a running deploy |
-| `GET` | `/configs` | List all repo configs |
 | `POST` | `/config` | Create or update a repo config |
+| `DELETE` | `/config/:name` | Delete a repo config |
+| `GET` | `/configs` | List all repo configs |
 | `GET` | `/logs/stream/:deployId` | SSE stream of deploy logs |
 
 ## License
