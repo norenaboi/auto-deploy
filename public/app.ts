@@ -118,6 +118,13 @@ async function saveConfig(
   if (!res.ok) throw new Error(await res.text());
 }
 
+async function deleteConfig(name: string): Promise<void> {
+  const res = await fetch(`/config/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 async function fetchConfigs(): Promise<ConfigEntry[]> {
   try {
     return await apiFetch<ConfigEntry[]>("/configs");
@@ -428,7 +435,10 @@ async function openConfigListModal(): Promise<void> {
           <span class="config-list-name">${escHtml(c.name)}</span>
           <span class="config-list-meta">${escHtml(c.branch)} &middot; <code>${escHtml(c.path)}</code></span>
         </div>
-        <button type="button" class="btn btn-secondary btn-sm btn-edit-config">Edit</button>
+        <div class="config-list-row-actions">
+          <button type="button" class="btn btn-secondary btn-sm btn-edit-config">Edit</button>
+          <button type="button" class="btn btn-danger btn-sm btn-delete-config">Delete</button>
+        </div>
       </div>`,
     )
     .join("");
@@ -459,6 +469,60 @@ async function openConfigListModal(): Promise<void> {
         path: row.dataset.path!,
         branch: row.dataset.branch!,
       });
+    });
+  });
+
+  container.querySelectorAll(".btn-delete-config").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = (btn as HTMLElement).closest<HTMLElement>(
+        ".config-list-row",
+      )!;
+      const name = row.dataset.name!;
+
+      // Inline confirmation: replace button with confirm/cancel pair
+      const deleteBtn = btn as HTMLButtonElement;
+      if (deleteBtn.dataset.confirming === "true") return;
+      deleteBtn.dataset.confirming = "true";
+      deleteBtn.textContent = "Confirm?";
+      deleteBtn.classList.add("btn-delete-confirming");
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-ghost btn-sm";
+      cancelBtn.textContent = "Cancel";
+      deleteBtn.insertAdjacentElement("afterend", cancelBtn);
+
+      const reset = () => {
+        deleteBtn.textContent = "Delete";
+        deleteBtn.classList.remove("btn-delete-confirming");
+        delete deleteBtn.dataset.confirming;
+        cancelBtn.remove();
+      };
+
+      cancelBtn.addEventListener("click", reset);
+
+      deleteBtn.addEventListener(
+        "click",
+        async () => {
+          deleteBtn.disabled = true;
+          cancelBtn.disabled = true;
+          try {
+            await deleteConfig(name);
+            await openConfigListModal();
+          } catch (e: any) {
+            reset();
+            deleteBtn.disabled = false;
+            // Show error inline
+            const errEl = document.createElement("span");
+            errEl.className = "modal-error";
+            errEl.style.fontSize = "0.72rem";
+            errEl.textContent = e.message ?? "Delete failed";
+            row.insertAdjacentElement("afterend", errEl);
+            setTimeout(() => errEl.remove(), 4000);
+          }
+        },
+        { once: true },
+      );
     });
   });
 

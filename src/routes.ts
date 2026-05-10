@@ -46,6 +46,13 @@ function saveConfig(config: Config) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(configData));
 }
 
+function deleteConfig(name: string) {
+  const configData = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+  if (!configData[name]) throw new Error(`No config found for repo ${name}`);
+  delete configData[name];
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(configData));
+}
+
 webhookRouter.post(
   "/webhook/:repo",
   express.raw({ type: "*/*" }),
@@ -148,6 +155,19 @@ router.post("/deploy/:name", verifySession, (req: Request, res: Response) => {
     return res.send("OK");
   } catch (e) {
     return res.status(404).send("No config found for repo " + repoName);
+  }
+});
+
+router.delete("/config/:name", verifySession, (req: Request, res: Response) => {
+  if (typeof req.params.name !== "string") {
+    return res.status(400).send("Invalid repo name");
+  }
+  const repoName: string = req.params.name;
+  try {
+    deleteConfig(repoName);
+    return res.send("OK");
+  } catch (e: any) {
+    return res.status(404).send(e.message);
   }
 });
 

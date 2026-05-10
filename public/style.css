@@ -475,6 +475,17 @@ body {
     background: var(--surface-hover);
 }
 
+.config-list-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.btn-delete-confirming {
+    background: color-mix(in srgb, var(--danger) 80%, #000) !important;
+}
+
 .config-list-info {
     display: flex;
     flex-direction: column;
