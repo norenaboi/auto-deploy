@@ -25,4 +25,5 @@ export type Settings = {
   secret: string;
   path: string;
   branch: string;
+  steps?: string[];
 };

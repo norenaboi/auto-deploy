@@ -4,17 +4,12 @@ import { spawn, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { Config, Deploy } from "./types";
 
-// Queue maps
 const queue = new Map<string, Deploy[]>();
 const running = new Map<string, boolean>();
-
-// One EventEmitter per active deploy — SSE clients subscribe to these
 export const deployEmitters = new Map<number, EventEmitter>();
-
-// Track running child processes so we can kill them
 const runningProcesses = new Map<number, ChildProcess>();
+const backgroundProcesses = new Map<string, ChildProcess>();
 
-// Queue
 export function queueDeploy(config: Config, sha256?: string) {
   let settings = config.settings;
   let deployObj: Deploy = {
@@ -34,7 +29,6 @@ export function queueDeploy(config: Config, sha256?: string) {
   deploy(deployObj, config);
 }
 
-// Deployment
 export function deploy(deployObj: Deploy, config: Config) {
   const dirPath = config.settings.path;
 
@@ -44,11 +38,19 @@ export function deploy(deployObj: Deploy, config: Config) {
   const saved = db.createDeploy(deployObj);
   const deployId = saved.id;
 
-  // Create an emitter that SSE clients will subscribe to
   const emitter = new EventEmitter();
   deployEmitters.set(deployId, emitter);
 
   let finished = false;
+
+  const steps = config.settings.steps;
+  if (!steps) {
+    const errLine = `[runner error] No steps defined for deploy: ${deployObj.repo}`;
+    db.createLog(deployId, errLine, Date.now());
+    emitter.emit("log", errLine);
+    finalize("failed");
+    return;
+  }
 
   if (!existsSync(dirPath)) {
     const errLine = `[runner error] Deploy path does not exist: ${dirPath}`;
@@ -58,19 +60,22 @@ export function deploy(deployObj: Deploy, config: Config) {
     return;
   }
 
-  const proc = spawn("docker", ["compose", "up", "-d", "--build"], {
-    cwd: dirPath,
-  });
-  runningProcesses.set(deployId, proc);
-
-  function handleChunk(chunk: Buffer) {
-    const line = chunk.toString();
-    db.createLog(deployId, line, Date.now());
-    emitter.emit("log", line);
+  const prevBg = backgroundProcesses.get(config.name);
+  if (prevBg) {
+    const killLine = `[runner] Killing previous background process (pid ${prevBg.pid}) before new deploy.`;
+    db.createLog(deployId, killLine, Date.now());
+    emitter.emit("log", killLine);
+    try {
+      process.kill(-prevBg.pid!, "SIGTERM");
+    } catch {
+      try {
+        prevBg.kill("SIGTERM");
+      } catch {}
+    }
+    backgroundProcesses.delete(config.name);
   }
 
-  proc.stdout.on("data", handleChunk);
-  proc.stderr.on("data", handleChunk);
+  stepRunner(deployId, steps, dirPath, config.name, emitter, finalize);
 
   function finalize(status: "success" | "failed" | "stopped") {
     if (finished) return;
@@ -90,22 +95,132 @@ export function deploy(deployObj: Deploy, config: Config) {
       deploy(next, config);
     }
   }
-
-  proc.on("error", (err) => {
-    const errLine = `[spawn error] ${err.message}`;
-    db.createLog(deployId, errLine, Date.now());
-    emitter.emit("log", errLine);
-    finalize("failed");
-  });
-
-  proc.on("close", (exitCode) => {
-    // If the process was killed intentionally, finalize() was already called
-    // with "stopped", so the `finished` flag prevents double-finalizing.
-    finalize(exitCode === 0 ? "success" : "failed");
-  });
 }
 
-// Stop a running deploy by its deploy ID
+function spawnShell(
+  script: string,
+  cwd: string,
+  onChunk: (chunk: Buffer) => void,
+  onError: (err: Error) => void,
+  onClose: (exitCode: number | null) => void,
+): ChildProcess {
+  const proc = spawn("sh", ["-c", script], { cwd });
+  proc.stdout.on("data", onChunk);
+  proc.stdout.on("error", () => {});
+  proc.stderr.on("data", onChunk);
+  proc.stderr.on("error", () => {});
+  proc.on("error", onError);
+  proc.on("close", onClose);
+  return proc;
+}
+
+function stepRunner(
+  deployId: number,
+  steps: string[],
+  cwd: string,
+  repoName: string,
+  emitter: EventEmitter,
+  finalize: (status: "success" | "failed" | "stopped") => void,
+): void {
+  const bgIndex = steps.findIndex((s) => s.trimStart().startsWith("&"));
+  const fgSteps = bgIndex === -1 ? steps : steps.slice(0, bgIndex);
+  const bgStep =
+    bgIndex === -1 ? null : steps[bgIndex].trimStart().slice(1).trimStart();
+
+  function handleChunk(chunk: Buffer) {
+    const line = chunk.toString();
+    db.createLog(deployId, line, Date.now());
+    emitter.emit("log", line);
+  }
+
+  function launchBackground() {
+    if (!bgStep) {
+      finalize("success");
+      return;
+    }
+    const bgHeader = `\n[step ${steps.length}/${steps.length}] ${bgStep} (background)\n`;
+    db.createLog(deployId, bgHeader, Date.now());
+    emitter.emit("log", bgHeader);
+
+    const bg = spawn("sh", ["-c", bgStep], {
+      cwd,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    backgroundProcesses.set(repoName, bg);
+
+    let capturing = true;
+
+    function stopCapturing() {
+      if (!capturing) return;
+      capturing = false;
+      bg.stdout?.destroy();
+      bg.stderr?.destroy();
+    }
+
+    const captureTimeout = setTimeout(stopCapturing, 5000);
+
+    function onBgChunk(chunk: Buffer) {
+      if (!capturing) return;
+      const line = chunk.toString();
+      db.createLog(deployId, line, Date.now());
+      emitter.emit("log", line);
+    }
+    bg.stdout?.on("data", onBgChunk);
+    bg.stderr?.on("data", onBgChunk);
+
+    bg.on("exit", (code) => {
+      clearTimeout(captureTimeout);
+      stopCapturing();
+      if (code !== null && code !== 0) {
+        const exitLine = `[runner] Background process exited with code ${code}.`;
+        db.createLog(deployId, exitLine, Date.now());
+        emitter.emit("log", exitLine);
+      }
+      if (backgroundProcesses.get(repoName) === bg) {
+        backgroundProcesses.delete(repoName);
+      }
+    });
+
+    bg.unref();
+
+    finalize("success");
+  }
+
+  if (fgSteps.length === 0) {
+    launchBackground();
+    return;
+  }
+
+  const script = fgSteps
+    .map((s, i) => `echo "[step ${i + 1}/${steps.length}] ${s}" && ${s}`)
+    .join(" && ");
+
+  const proc = spawnShell(
+    script,
+    cwd,
+    handleChunk,
+    (err) => {
+      const errLine = `[spawn error] ${err.message}`;
+      db.createLog(deployId, errLine, Date.now());
+      emitter.emit("log", errLine);
+      finalize("failed");
+    },
+    (exitCode) => {
+      runningProcesses.delete(deployId);
+      if (exitCode === null) {
+        finalize("stopped");
+      } else if (exitCode !== 0) {
+        finalize("failed");
+      } else {
+        launchBackground();
+      }
+    },
+  );
+
+  runningProcesses.set(deployId, proc);
+}
+
 export function stopDeploy(deployId: number): boolean {
   const proc = runningProcesses.get(deployId);
   if (!proc) return false;
@@ -117,10 +232,8 @@ export function stopDeploy(deployId: number): boolean {
     emitter.emit("log", stopLine);
   }
 
-  // Mark as stopped before killing so the close handler doesn't overwrite it
   db.updateDeployStatus(deployId, "stopped", Date.now());
 
-  // Kill the entire process group so child processes (docker compose) are also terminated
   try {
     process.kill(-proc.pid!, "SIGTERM");
   } catch {

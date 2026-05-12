@@ -397,6 +397,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
+    height: 570px;
 }
 
 .modal-form label {
@@ -408,7 +409,7 @@ body {
     font-weight: 500;
 }
 
-.modal-form input {
+.modal-form input:not([type="checkbox"]):not([type="radio"]) {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -420,7 +421,7 @@ body {
     font-family: inherit;
     width: 100%;
 }
-.modal-form input:focus {
+.modal-form input:not([type="checkbox"]):not([type="radio"]):focus {
     border-color: var(--accent);
 }
 
@@ -428,7 +429,7 @@ body {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-    margin-top: 0.25rem;
+    margin-top: auto;
 }
 
 .modal-error {
@@ -682,4 +683,273 @@ body {
 .btn-filter-active {
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Config modal: two-column layout ────────────────────────────────────── */
+.modal-box:has(.config-modal-body) {
+    width: 820px;
+}
+
+.config-modal-body {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.config-modal-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.config-modal-right {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Step builder card ───────────────────────────────────────────────────── */
+.step-builder {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem;
+}
+
+.step-builder-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.step-builder-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+/* ── Preset picker pills ─────────────────────────────────────────────────── */
+.preset-picker {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.btn-preset-pill {
+    padding: 0.25em 0.8em;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-muted);
+    transition:
+        background 0.12s,
+        color 0.12s,
+        border-color 0.12s;
+}
+
+.btn-preset-pill.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Preset options ──────────────────────────────────────────────────────── */
+.preset-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.preset-options.hidden {
+    display: none;
+}
+
+.preset-option-row {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 26px;
+}
+
+.option-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.option-controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: center;
+    gap: 0.35rem 0;
+    text-align: center;
+}
+
+.option-input-prefix {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+
+.option-controls input[type="text"] {
+    width: 80px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) / 1.5);
+    color: var(--text);
+    padding: 0.25em 0.5em;
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.option-controls input[type="text"]:focus {
+    border-color: var(--accent);
+}
+
+/* ── Custom radio buttons ────────────────────────────────────────────────── */
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    user-select: none;
+    transition: color 0.12s;
+}
+
+.radio-label input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: content-box;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+
+.radio-label input[type="radio"]:checked {
+    border-color: var(--accent);
+    box-shadow:
+        inset 0 0 0 3px var(--bg),
+        inset 0 0 0 7px var(--accent);
+}
+
+.radio-label:has(input:checked) {
+    color: var(--text);
+}
+
+/* ── Custom checkbox ─────────────────────────────────────────────────────── */
+.check-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    user-select: none;
+    transition: color 0.12s;
+}
+
+.check-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: content-box;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    position: relative;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+
+.check-label input[type="checkbox"]:checked {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.check-label input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.check-label input[type="checkbox"]:checked::after {
+    opacity: 1;
+}
+
+.check-label:has(input:checked) {
+    color: var(--text);
+}
+
+/* ── Docker no-options note ──────────────────────────────────────────────── */
+.docker-no-options {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin: 0;
+    padding: 0.25rem 0;
+}
+
+/* ── Steps preview ───────────────────────────────────────────────────────── */
+.steps-preview-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.65rem;
+    margin-top: 0.1rem;
+}
+
+.steps-preview-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.steps-preview {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text);
+    white-space: pre;
+    margin: 0;
+    line-height: 1.8;
+    counter-reset: step-counter;
+    height: 150px;
 }

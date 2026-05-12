@@ -6,14 +6,11 @@ import { Deploy, Log } from "./types";
 const DB_DIR = path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DB_DIR, "database.db");
 
-// Create the data folder if it doesn't exist
 if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
 export const db = new Database(DB_PATH, {});
-
-// --- db init -----------------------------------------------------------------
 
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
@@ -40,8 +37,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_logs_deploy_id ON logs(deploy_id);
 `);
 
-// --- Statements -----------------------------------------------------------------
-
 const stmtInsertDeploy = db.prepare<{
   repo: string;
   branch: string;
@@ -65,8 +60,6 @@ const stmtGetDeployById = db.prepare<[number], Deploy | undefined>(
 const stmtGetDeploysByName = db.prepare<[string], Deploy>(
   `SELECT * FROM deploys WHERE repo = ?`,
 );
-
-// --- Logs -----------------------------------------------------------------
 
 const stmtInsertLog = db.prepare<{
   deploy_id: number;
@@ -95,8 +88,6 @@ const stmtUpdateDeployStatus = db.prepare<{
 }>(
   `UPDATE deploys SET status = @status, finished_at = @finished_at WHERE id = @id`,
 );
-
-// --- Helpers -----------------------------------------------------------------
 
 export function createDeploy(deploy: Deploy): Deploy {
   try {

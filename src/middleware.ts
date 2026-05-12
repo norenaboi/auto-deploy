@@ -1,20 +1,19 @@
 import crypto from "crypto";
 import { Request, Response, NextFunction, Router } from "express";
 import path from "path";
+import { env } from "./env";
 export const adminRouter = Router();
 
-// In-memory session store: sessionId -> { expiresAt }
 const sessions = new Map<string, { expiresAt: number }>();
 const SESSION_TTL = 24 * 60 * 60 * 1000;
 
-const MASTER_KEY: string = process.env.MASTER_KEY || "admin";
+const MASTER_KEY: string = env.MASTER_KEY || "admin";
 
 if (!MASTER_KEY || MASTER_KEY.trim().length < 16) {
   console.error("FATAL: MASTER_KEY is not set or too short after reload.");
   process.exit(1);
 }
 
-// Parses the raw Cookie header into a key/value map (no cookie-parser needed)
 export function parseCookies(req: Request): Record<string, string> {
   const cookies: Record<string, string> = {};
   const header = req.headers.cookie;
@@ -79,7 +78,6 @@ export function deleteSession(sessionId: string) {
   if (sessionId) sessions.delete(sessionId);
 }
 
-// Periodically remove expired sessions (every hour)
 setInterval(
   () => {
     const now = Date.now();
@@ -90,8 +88,6 @@ setInterval(
   60 * 60 * 1000,
 ).unref();
 
-// IP-level brute-force limiter for admin/auth routes
-// Tracks attempt timestamps per IP and rejects if too many occur within the window
 const ADMIN_WINDOW_SECONDS = 60;
 const ADMIN_MAX_ATTEMPTS = 30;
 const adminAttempts = new Map();
@@ -112,7 +108,6 @@ function adminRateLimit(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// Routes
 adminRouter.get("/login", (req: Request, res: Response) => {
   if (validateSession(parseCookies(req).adminSession)) {
     return res.redirect("/");
@@ -120,7 +115,6 @@ adminRouter.get("/login", (req: Request, res: Response) => {
   return res.sendFile(path.join(__dirname, "..", "public", "login.html"));
 });
 
-// POST /login — validate master key and issue a session cookie
 adminRouter.post("/login", (req: Request, res: Response) => {
   const provided = (req.body.masterKey || "").toString();
   const expected = MASTER_KEY;
@@ -136,18 +130,16 @@ adminRouter.post("/login", (req: Request, res: Response) => {
   }
 
   const sessionId = createSession();
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = env.NODE_ENV === "production";
   res.cookie("adminSession", sessionId, {
     httpOnly: true,
     secure: isProduction,
     sameSite: "strict",
-    maxAge:
-      parseInt(process.env.SESSION_TTL_HOURS || "24", 10) * 60 * 60 * 1000,
+    maxAge: parseInt(env.SESSION_TTL_HOURS || "24", 10) * 60 * 60 * 1000,
   });
   res.json({ success: true });
 });
 
-// POST /logout — delete the session and clear the cookie
 adminRouter.post("/logout", (req: Request, res: Response) => {
   const sessionId = parseCookies(req).adminSession;
   deleteSession(sessionId);

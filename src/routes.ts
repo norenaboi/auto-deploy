@@ -3,7 +3,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import * as db from "./db";
-import { Config } from "./types";
+import { Config, Settings } from "./types";
 import { queueDeploy, deployEmitters, stopDeploy } from "./runner";
 import { verifySession } from "./middleware";
 export const router = Router();
@@ -12,12 +12,14 @@ export const webhookRouter = Router();
 const CONFIG_DIR = path.join(__dirname, "..", "data");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 
-// Create the config file if it doesn't exist
+if (!fs.existsSync(CONFIG_DIR)) {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+}
+
 if (!fs.existsSync(CONFIG_PATH)) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify({}));
 }
 
-// Helpers
 function getConfig(repoName: string): Config {
   const configFile = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
   if (configFile[repoName]) {
@@ -32,11 +34,13 @@ function editConfig(
   secret?: string,
   pathDir?: string,
   branch?: string,
+  steps?: string[],
 ) {
   const configData = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
   if (secret) configData[name].secret = secret;
   if (pathDir) configData[name].path = pathDir;
   if (branch) configData[name].branch = branch;
+  if (steps) configData[name].steps = steps;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(configData));
 }
 
@@ -178,16 +182,37 @@ router.get("/configs", verifySession, (req: Request, res: Response) => {
       name,
       path: settings.path,
       branch: settings.branch,
+      steps: settings.steps,
     }),
   );
   return res.json(configs);
 });
 
+const ALLOWED_STEPS = [
+  /^git pull(\s--(rebase|force))?$/,
+  /^npm (install|ci)$/,
+  /^npm run build$/,
+  /^docker compose (pull|down)$/,
+  /^docker compose up -d --build(\s--no-cache)?$/,
+  /^& npm run start$/,
+];
+
+function validateSteps(steps: unknown): string | null {
+  if (!Array.isArray(steps)) return "Steps must be an array";
+  for (const step of steps) {
+    if (typeof step !== "string") return "Each step must be a string";
+    if (!ALLOWED_STEPS.some((r) => r.test(step.trim()))) {
+      return `Step not allowed: "${step}"`;
+    }
+  }
+  return null;
+}
+
 router.post("/config", verifySession, (req: Request, res: Response) => {
   if (typeof req.body !== "object") {
     return res.status(400).send("Invalid request body");
   }
-  const { name, secret, path: pathDir, branch } = req.body;
+  const { name, secret, path: pathDir, branch, steps } = req.body;
   if (
     typeof name !== "string" ||
     typeof secret !== "string" ||
@@ -212,15 +237,26 @@ router.post("/config", verifySession, (req: Request, res: Response) => {
       if (branch) {
         branchTemp = branch;
       }
-      if (secret || path || branch) {
-        editConfig(name, secretTemp, pathTemp, branchTemp);
+      let stepsTemp: string[] | undefined;
+      if (steps && Array.isArray(steps)) {
+        const err = validateSteps(steps);
+        if (err) return res.status(400).send(err);
+        stepsTemp = steps;
+      }
+      if (secret || pathDir || branch || stepsTemp) {
+        editConfig(name, secretTemp, pathTemp, branchTemp, stepsTemp);
         return res.send("OK");
       } else {
         return res.status(400).send("The config already exists");
       }
     }
   } catch (e) {
-    const settings = { secret, path: pathDir, branch };
+    const settings: Settings = { secret, path: pathDir, branch };
+    if (steps && Array.isArray(steps)) {
+      const err = validateSteps(steps);
+      if (err) return res.status(400).send(err);
+      settings.steps = steps;
+    }
     const config = { name, settings };
     saveConfig(config);
     return res.send("OK");
@@ -239,20 +275,23 @@ router.get(
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
-    // Always replay whatever has already been saved (handles late-joining clients)
+    function sseWrite(line: string) {
+      const encoded = line.replace(/\n/g, "\ndata: ");
+      res.write(`data: ${encoded}\n\n`);
+    }
+
     const existingLogs = db.getLogsByDeployId(deployId);
     for (const log of existingLogs) {
-      res.write(`data: ${log.line}\n\n`);
+      sseWrite(log.line);
     }
 
     const emitter = deployEmitters.get(deployId);
     if (!emitter) {
-      // Deploy is already done — historical logs were sent above, close the stream
       res.end();
       return;
     }
 
-    const onLog = (line: string) => res.write(`data: ${line}\n\n`);
+    const onLog = (line: string) => sseWrite(line);
     const onDone = (status: string) => {
       res.write(`data: [deploy ${status}]\n\n`);
       res.end();
@@ -261,7 +300,6 @@ router.get(
     emitter.on("log", onLog);
     emitter.on("done", onDone);
 
-    // Clean up listeners when the browser closes the tab
     req.on("close", () => {
       emitter.off("log", onLog);
       emitter.off("done", onDone);

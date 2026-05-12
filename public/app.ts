@@ -6,6 +6,7 @@ interface ConfigEntry {
   name: string;
   path: string;
   branch: string;
+  steps?: string[];
 }
 
 interface Deploy {
@@ -109,11 +110,14 @@ async function saveConfig(
   secret?: string,
   pathDir?: string,
   branch?: string,
+  steps?: string[],
 ): Promise<void> {
+  const body: Record<string, unknown> = { name, secret, path: pathDir, branch };
+  if (steps && steps.length > 0) body.steps = steps;
   const res = await fetch("/config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, secret, path: pathDir, branch }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());
 }
@@ -370,31 +374,231 @@ function closeModal(): void {
 
 function openConfigModal(prefill?: ConfigEntry): void {
   const isEdit = !!prefill;
+
+  // ── Detect initial preset from prefill steps ──────────────────────────────
+  type Preset = "node" | "docker";
+  let activePreset: Preset = "node";
+  if (prefill) {
+    if (!prefill.steps || prefill.steps[0]?.startsWith("docker compose")) {
+      activePreset = "docker";
+    }
+  }
+
+  // ── Reverse-engineer Node options from prefill steps ─────────────────────
+  type PullFlag = "none" | "--rebase" | "--force";
+  type InstallMode = "npm install" | "npm ci";
+  let initPullFlag: PullFlag = "none";
+  let initInstallMode: InstallMode = "npm install";
+  let initIncludeBuild = false;
+
+  if (prefill?.steps && activePreset === "node") {
+    const steps = prefill.steps;
+    if (steps[0]?.endsWith("--rebase")) initPullFlag = "--rebase";
+    else if (steps[0]?.endsWith("--force")) initPullFlag = "--force";
+    if (steps[1] === "npm ci") initInstallMode = "npm ci";
+    if (steps.includes("npm run build")) initIncludeBuild = true;
+  }
+
+  // ── Reverse-engineer Docker options from prefill steps ────────────────────
+  let initDockerPull = false;
+  let initDockerDown = false;
+  let initDockerNoCache = false;
+
+  if (prefill?.steps && activePreset === "docker") {
+    const steps = prefill.steps;
+    initDockerPull = steps.includes("docker compose pull");
+    initDockerDown = steps.includes("docker compose down");
+    initDockerNoCache = steps.some((s) => s.includes("--no-cache"));
+  }
+
+  // ── Build the form element ────────────────────────────────────────────────
   const form = document.createElement("form");
   form.className = "modal-form";
-  form.innerHTML = `
-        <h2 class="modal-title">${isEdit ? "Edit Config" : "Add Config"}</h2>
-        <label>Repo name     <input name="name"   type="text"      placeholder="my-app"       value="${escHtml(prefill?.name ?? "")}" ${isEdit ? "readonly" : ""} /></label>
-        <label>Webhook secret <input name="secret" type="password"  placeholder="${isEdit ? "Leave blank to keep existing" : "&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"}" /></label>
-        <label>Deploy path   <input name="path"   type="text"      placeholder="/srv/my-app"  value="${escHtml(prefill?.path ?? "")}" /></label>
-        <label>Branch        <input name="branch" type="text"      placeholder="main"         value="${escHtml(prefill?.branch ?? "")}" /></label>
-        <p class="modal-error hidden" id="modal-error"></p>
-        <div class="modal-actions">
-            <button type="button" class="btn btn-ghost"    id="btn-modal-cancel">${isEdit ? "Back" : "Cancel"}</button>
-            <button type="submit" class="btn btn-primary">Save</button>
-        </div>
-    `;
 
+  const secretPlaceholder = isEdit
+    ? "Leave blank to keep existing"
+    : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+
+  form.innerHTML = `
+    <h2 class="modal-title">${isEdit ? "Edit Config" : "Add Config"}</h2>
+
+    <div class="config-modal-body">
+
+      <!-- Left column: core fields -->
+      <div class="config-modal-left">
+        <label>Repo name
+          <input name="name" type="text" placeholder="my-app"
+            value="${escHtml(prefill?.name ?? "")}" ${isEdit ? "readonly" : ""} required/>
+        </label>
+        <label>Secret
+          <input name="secret" type="password" placeholder="${escHtml(secretPlaceholder)}"/>
+        </label>
+        <label>Deploy path
+          <input name="path" type="text" placeholder="/srv/my-app"
+            value="${escHtml(prefill?.path ?? "")}" required/>
+        </label>
+        <label>Branch
+          <input name="branch" type="text" placeholder="main"
+            value="${escHtml(prefill?.branch ?? "")}" required/>
+        </label>
+      </div>
+
+      <!-- Right column: step builder -->
+      <div class="config-modal-right">
+        <div class="step-builder">
+
+          <div class="step-builder-header">
+            <span class="step-builder-title">Preset</span>
+            <div class="preset-picker">
+              <button type="button" class="btn-preset-pill${activePreset === "node" ? " active" : ""}" data-preset="node">Node</button>
+              <button type="button" class="btn-preset-pill${activePreset === "docker" ? " active" : ""}" data-preset="docker">Docker</button>
+            </div>
+          </div>
+
+          <!-- Node options -->
+          <div class="preset-options${activePreset !== "node" ? " hidden" : ""}" id="node-options">
+            <div class="preset-option-row">
+              <span class="option-label">Pull flag</span>
+              <div class="option-controls">
+                <label class="radio-label"><input type="radio" name="pull-flag" value="none" ${initPullFlag === "none" ? "checked" : ""} /><span>none</span></label>
+                <label class="radio-label"><input type="radio" name="pull-flag" value="--rebase" ${initPullFlag === "--rebase" ? "checked" : ""} /><span>--rebase</span></label>
+                <label class="radio-label"><input type="radio" name="pull-flag" value="--force" ${initPullFlag === "--force" ? "checked" : ""} /><span>--force</span></label>
+              </div>
+            </div>
+            <div class="preset-option-row">
+              <span class="option-label">Install</span>
+              <div class="option-controls">
+                <label class="radio-label"><input type="radio" name="install-mode" value="npm install" ${initInstallMode === "npm install" ? "checked" : ""} /><span>npm install</span></label>
+                <label class="radio-label"><input type="radio" name="install-mode" value="npm ci" ${initInstallMode === "npm ci" ? "checked" : ""} /><span>npm ci</span></label>
+              </div>
+            </div>
+            <div class="preset-option-row">
+              <span class="option-label">Build step</span>
+              <div class="option-controls">
+                <label class="check-label"><input type="checkbox" id="include-build" ${initIncludeBuild ? "checked" : ""} /><span>npm run build</span></label>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Docker options -->
+          <div class="preset-options${activePreset !== "docker" ? " hidden" : ""}" id="docker-options">
+            <div class="preset-option-row">
+              <span class="option-label">Before</span>
+              <div class="option-controls">
+                <label class="check-label"><input type="checkbox" id="docker-pull" ${initDockerPull ? "checked" : ""} /><span>compose pull</span></label>
+                <label class="check-label"><input type="checkbox" id="docker-down" ${initDockerDown ? "checked" : ""} /><span>compose down</span></label>
+              </div>
+            </div>
+            <div class="preset-option-row">
+              <span class="option-label">Build</span>
+              <div class="option-controls">
+                <label class="check-label"><input type="checkbox" id="docker-no-cache" ${initDockerNoCache ? "checked" : ""} /><span>--no-cache</span></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Steps preview -->
+          <div class="steps-preview-block">
+            <span class="steps-preview-label">Steps preview</span>
+            <pre class="steps-preview" id="steps-preview"></pre>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <p class="modal-error hidden" id="modal-error"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="btn-modal-cancel">${isEdit ? "Back" : "Cancel"}</button>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  `;
+
+  // ── Resolve steps from current UI state ─────────────────────────────────
+  function resolveSteps(): string[] {
+    if (activePreset === "docker") {
+      const pull =
+        form.querySelector<HTMLInputElement>("#docker-pull")?.checked ?? false;
+      const down =
+        form.querySelector<HTMLInputElement>("#docker-down")?.checked ?? false;
+      const noCache =
+        form.querySelector<HTMLInputElement>("#docker-no-cache")?.checked ??
+        false;
+      const steps: string[] = [];
+      if (pull) steps.push("docker compose pull");
+      if (down) steps.push("docker compose down");
+      steps.push(`docker compose up -d --build${noCache ? " --no-cache" : ""}`);
+      return steps;
+    }
+    // Node preset
+    const pullFlagEl = form.querySelector<HTMLInputElement>(
+      "input[name='pull-flag']:checked",
+    );
+    const pullFlag = pullFlagEl?.value ?? "none";
+    const installModeEl = form.querySelector<HTMLInputElement>(
+      "input[name='install-mode']:checked",
+    );
+    const installMode = installModeEl?.value ?? "npm install";
+    const includeBuild =
+      form.querySelector<HTMLInputElement>("#include-build")?.checked ?? false;
+    const gitPull = pullFlag === "none" ? "git pull" : `git pull ${pullFlag}`;
+    const steps: string[] = [gitPull, installMode];
+    if (includeBuild) steps.push("npm run build");
+    steps.push("& npm run start");
+    return steps;
+  }
+
+  // ── Update preview display ────────────────────────────────────────────────
+  function updatePreview(): void {
+    const previewEl = form.querySelector<HTMLPreElement>("#steps-preview");
+    if (previewEl) previewEl.textContent = resolveSteps().join("\n");
+  }
+
+  // ── Preset pill switching ─────────────────────────────────────────────────
+  form
+    .querySelectorAll<HTMLButtonElement>(".btn-preset-pill")
+    .forEach((pill) => {
+      pill.addEventListener("click", () => {
+        activePreset = pill.dataset.preset as Preset;
+        form
+          .querySelectorAll<HTMLButtonElement>(".btn-preset-pill")
+          .forEach((p) => {
+            p.classList.toggle("active", p.dataset.preset === activePreset);
+          });
+        form
+          .querySelector<HTMLElement>("#node-options")!
+          .classList.toggle("hidden", activePreset !== "node");
+        form
+          .querySelector<HTMLElement>("#docker-options")!
+          .classList.toggle("hidden", activePreset !== "docker");
+        updatePreview();
+      });
+    });
+
+  // ── Live preview on any option change ────────────────────────────────────
+  form
+    .querySelector("#node-options")!
+    .addEventListener("change", updatePreview);
+  form.querySelector("#node-options")!.addEventListener("input", updatePreview);
+  form
+    .querySelector("#docker-options")!
+    .addEventListener("change", updatePreview);
+
+  // ── Submit ────────────────────────────────────────────────────────────────
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = new FormData(form);
     const errEl = form.querySelector<HTMLElement>("#modal-error")!;
     try {
+      const resolvedSteps = resolveSteps();
       await saveConfig(
         data.get("name") as string,
         data.get("secret") as string,
         data.get("path") as string,
         data.get("branch") as string,
+        resolvedSteps,
       );
       closeModal();
     } catch (err) {
@@ -404,6 +608,7 @@ function openConfigModal(prefill?: ConfigEntry): void {
     }
   });
 
+  // ── Cancel / Back ─────────────────────────────────────────────────────────
   form.querySelector("#btn-modal-cancel")!.addEventListener("click", () => {
     if (isEdit) {
       openConfigListModal();
@@ -411,7 +616,10 @@ function openConfigModal(prefill?: ConfigEntry): void {
       closeModal();
     }
   });
+
   openModal(form);
+  updatePreview();
+
   if (!isEdit) form.querySelector<HTMLInputElement>("[name=name]")?.focus();
   else form.querySelector<HTMLInputElement>("[name=secret]")?.focus();
 }
