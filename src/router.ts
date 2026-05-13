@@ -35,12 +35,14 @@ function editConfig(
   pathDir?: string,
   branch?: string,
   steps?: string[],
+  auto?: boolean,
 ) {
   const configData = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
   if (secret) configData[name].secret = secret;
   if (pathDir) configData[name].path = pathDir;
   if (branch) configData[name].branch = branch;
   if (steps) configData[name].steps = steps;
+  if (auto !== undefined) configData[name].auto = auto;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(configData));
 }
 
@@ -100,11 +102,37 @@ webhookRouter.post(
     const branch = payload.ref.replace("refs/heads/", "");
     if (branch !== config.settings.branch)
       return res.status(200).send("Ignored");
-    queueDeploy(config, payload.head_commit.id);
+
+    // Persist the commit metadata before queuing the deploy
+    const headCommit = payload.head_commit;
+    if (headCommit) {
+      db.createCommit({
+        commit_sha: headCommit.id,
+        commit_repo: repoName,
+        commit_branch: branch,
+        message: headCommit.message ?? "",
+        timestamp: headCommit.timestamp
+          ? new Date(headCommit.timestamp).getTime()
+          : Date.now(),
+      });
+    }
+
+    if (config.settings.auto === false)
+      return res.status(200).send("Auto-deploy disabled");
+
+    queueDeploy(config, headCommit?.id);
 
     return res.send("OK");
   },
 );
+
+router.get("/commits", verifySession, (req: Request, res: Response) => {
+  const repo = req.query.repo;
+  if (typeof repo === "string" && repo) {
+    return res.json(db.getCommitsByRepo(repo));
+  }
+  return res.json(db.getAllCommits());
+});
 
 router.get("/deploy/id/:id", verifySession, (req: Request, res: Response) => {
   if (typeof req.params.id !== "string") {
@@ -183,6 +211,7 @@ router.get("/configs", verifySession, (req: Request, res: Response) => {
       path: settings.path,
       branch: settings.branch,
       steps: settings.steps,
+      auto: settings.auto !== false,
     }),
   );
   return res.json(configs);
@@ -212,7 +241,7 @@ router.post("/config", verifySession, (req: Request, res: Response) => {
   if (typeof req.body !== "object") {
     return res.status(400).send("Invalid request body");
   }
-  const { name, secret, path: pathDir, branch, steps } = req.body;
+  const { name, secret, path: pathDir, branch, steps, auto } = req.body;
   if (
     typeof name !== "string" ||
     typeof secret !== "string" ||
@@ -220,6 +249,9 @@ router.post("/config", verifySession, (req: Request, res: Response) => {
     typeof branch !== "string"
   ) {
     return res.status(400).send("Invalid request body");
+  }
+  if (auto !== undefined && typeof auto !== "boolean") {
+    return res.status(400).send("Invalid value for auto");
   }
 
   let secretTemp: string | undefined;
@@ -243,8 +275,10 @@ router.post("/config", verifySession, (req: Request, res: Response) => {
         if (err) return res.status(400).send(err);
         stepsTemp = steps;
       }
-      if (secret || pathDir || branch || stepsTemp) {
-        editConfig(name, secretTemp, pathTemp, branchTemp, stepsTemp);
+      const autoTemp: boolean | undefined =
+        auto !== undefined ? auto : undefined;
+      if (secret || pathDir || branch || stepsTemp || autoTemp !== undefined) {
+        editConfig(name, secretTemp, pathTemp, branchTemp, stepsTemp, autoTemp);
         return res.send("OK");
       } else {
         return res.status(400).send("The config already exists");
@@ -257,6 +291,7 @@ router.post("/config", verifySession, (req: Request, res: Response) => {
       if (err) return res.status(400).send(err);
       settings.steps = steps;
     }
+    if (auto !== undefined) settings.auto = auto;
     const config = { name, settings };
     saveConfig(config);
     return res.send("OK");

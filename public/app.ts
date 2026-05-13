@@ -7,6 +7,7 @@ interface ConfigEntry {
   path: string;
   branch: string;
   steps?: string[];
+  auto: boolean;
 }
 
 interface Deploy {
@@ -20,6 +21,15 @@ interface Deploy {
   finished_at: number | null;
 }
 
+interface Commit {
+  id: number;
+  commit_sha: string;
+  commit_repo: string;
+  commit_branch: string;
+  message: string;
+  timestamp: number;
+}
+
 // ── State ───────────────────────────────────────────────────────────────────
 
 let deploys: Deploy[] = [];
@@ -31,6 +41,10 @@ let pollTimer: number | null = null;
 let filterManual = true;
 let filterAuto = true;
 let filterRepo = ""; // "" = all repos
+
+// ── Commit filter state ──────────────────────────────────────────────────────────────
+let commits: Commit[] = [];
+let commitFilterRepo = ""; // "" = all configs
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -111,9 +125,11 @@ async function saveConfig(
   pathDir?: string,
   branch?: string,
   steps?: string[],
+  auto?: boolean,
 ): Promise<void> {
   const body: Record<string, unknown> = { name, secret, path: pathDir, branch };
   if (steps && steps.length > 0) body.steps = steps;
+  if (auto !== undefined) body.auto = auto;
   const res = await fetch("/config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -137,12 +153,103 @@ async function fetchConfigs(): Promise<ConfigEntry[]> {
   }
 }
 
+async function fetchAllCommits(): Promise<Commit[]> {
+  try {
+    return await apiFetch<Commit[]>("/commits");
+  } catch {
+    return [];
+  }
+}
+
 async function doLogout(): Promise<void> {
   await fetch("/logout", { method: "POST" });
   window.location.href = "/login";
 }
 
-// ── Filter helpers ────────────────────────────────────────────────────────────
+// ── Commit list ─────────────────────────────────────────────────────────────────────
+
+function getVisibleCommits(): Commit[] {
+  if (!commitFilterRepo) return commits;
+  return commits.filter((c) => c.commit_repo === commitFilterRepo);
+}
+
+function renderCommitList(): void {
+  const list = document.getElementById("commit-list")!;
+  list.innerHTML = "";
+
+  const visible = getVisibleCommits();
+
+  if (visible.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No recent updates";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const commit of visible) {
+    const card = document.createElement("div");
+    card.className = "commit-card";
+
+    const top = document.createElement("div");
+    top.className = "commit-card-top";
+
+    const config = document.createElement("span");
+    config.className = "commit-config";
+    config.textContent = commit.commit_repo;
+
+    const sha = document.createElement("span");
+    sha.className = "commit-sha";
+    sha.textContent = commit.commit_sha.slice(0, 7);
+
+    top.appendChild(config);
+    top.appendChild(sha);
+
+    const msg = document.createElement("div");
+    msg.className = "commit-message";
+    // Only show first line of the commit message
+    msg.textContent = commit.message.split("\n")[0];
+    msg.title = commit.message;
+
+    const bottom = document.createElement("div");
+    bottom.className = "commit-card-bottom";
+
+    const branch = document.createElement("span");
+    branch.className = "commit-branch";
+    branch.textContent = commit.commit_branch;
+
+    const time = document.createElement("span");
+    time.className = "commit-time";
+    time.textContent = timeAgo(commit.timestamp);
+
+    bottom.appendChild(branch);
+    bottom.appendChild(time);
+
+    card.appendChild(top);
+    card.appendChild(msg);
+    card.appendChild(bottom);
+    list.appendChild(card);
+  }
+}
+
+function populateCommitConfigSelect(configs: ConfigEntry[]): void {
+  const select = document.getElementById(
+    "filter-commit-config",
+  ) as HTMLSelectElement;
+  for (const cfg of configs) {
+    const opt = document.createElement("option");
+    opt.value = cfg.name;
+    opt.textContent = cfg.name;
+    select.appendChild(opt);
+  }
+}
+
+function updateCommitFilterBtnState(): void {
+  const btn = document.getElementById("btn-commit-filter")!;
+  btn.classList.toggle("btn-filter-active", commitFilterRepo !== "");
+}
+
+// ── Filter helpers ──────────────────────────────────────────────────────────────────
 
 function getVisibleDeploys(): Deploy[] {
   return deploys.filter((d) => {
@@ -374,6 +481,7 @@ function closeModal(): void {
 
 function openConfigModal(prefill?: ConfigEntry): void {
   const isEdit = !!prefill;
+  const initAuto = prefill ? prefill.auto !== false : true;
 
   // ── Detect initial preset from prefill steps ──────────────────────────────
   type Preset = "node" | "docker";
@@ -440,6 +548,10 @@ function openConfigModal(prefill?: ConfigEntry): void {
         <label>Branch
           <input name="branch" type="text" placeholder="main"
             value="${escHtml(prefill?.branch ?? "")}" required/>
+        </label>
+        <label class="check-label auto-deploy-toggle">
+          <input type="checkbox" id="auto-deploy" ${initAuto ? "checked" : ""} />
+          <span>Auto-deploy on push</span>
         </label>
       </div>
 
@@ -593,12 +705,15 @@ function openConfigModal(prefill?: ConfigEntry): void {
     const errEl = form.querySelector<HTMLElement>("#modal-error")!;
     try {
       const resolvedSteps = resolveSteps();
+      const autoChecked =
+        form.querySelector<HTMLInputElement>("#auto-deploy")?.checked ?? true;
       await saveConfig(
         data.get("name") as string,
         data.get("secret") as string,
         data.get("path") as string,
         data.get("branch") as string,
         resolvedSteps,
+        autoChecked,
       );
       closeModal();
     } catch (err) {
@@ -638,12 +753,13 @@ async function openConfigListModal(): Promise<void> {
   const rows = configs
     .map(
       (c) => `
-      <div class="config-list-row" data-name="${escHtml(c.name)}" data-path="${escHtml(c.path)}" data-branch="${escHtml(c.branch)}">
+      <div class="config-list-row" data-name="${escHtml(c.name)}" data-path="${escHtml(c.path)}" data-branch="${escHtml(c.branch)}" data-auto="${c.auto}">
         <div class="config-list-info">
           <span class="config-list-name">${escHtml(c.name)}</span>
           <span class="config-list-meta">${escHtml(c.branch)} &middot; <code>${escHtml(c.path)}</code></span>
         </div>
         <div class="config-list-row-actions">
+          <span class="config-auto-badge ${c.auto ? "config-auto-on" : "config-auto-off"}">${c.auto ? "Auto" : "Manual"}</span>
           <button type="button" class="btn btn-secondary btn-sm btn-edit-config">Edit</button>
           <button type="button" class="btn btn-danger btn-sm btn-delete-config">Delete</button>
         </div>
@@ -676,6 +792,7 @@ async function openConfigListModal(): Promise<void> {
         name: row.dataset.name!,
         path: row.dataset.path!,
         branch: row.dataset.branch!,
+        auto: row.dataset.auto !== "false",
       });
     });
   });
@@ -834,8 +951,13 @@ async function openTriggerModal(prefill = ""): Promise<void> {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 async function init(): Promise<void> {
-  deploys = await fetchAllDeploys();
+  // Load deploys and commits in parallel
+  [deploys, commits] = await Promise.all([
+    fetchAllDeploys(),
+    fetchAllCommits(),
+  ]);
   renderDeployList();
+  renderCommitList();
   startPolling();
 
   document
@@ -847,8 +969,8 @@ async function init(): Promise<void> {
   document.getElementById("btn-logout")!.addEventListener("click", doLogout);
 
   // ── Filter panel ──────────────────────────────────────────────────────────
-  const filterBtn = document.getElementById("btn-filter")!;
-  const filterPanel = document.getElementById("filter-panel")!;
+  const filterBtn = document.getElementById("btn-deploy-filter")!;
+  const filterPanel = document.getElementById("deploy-filter-panel")!;
   const filterManualEl = document.getElementById(
     "filter-manual",
   ) as HTMLButtonElement;
@@ -859,7 +981,7 @@ async function init(): Promise<void> {
     "filter-repo",
   ) as HTMLSelectElement;
 
-  // Populate repo select from configs
+  // Populate repo select from configs + build commit filter pills
   const configs = await fetchConfigs();
   for (const cfg of configs) {
     const opt = document.createElement("option");
@@ -867,6 +989,7 @@ async function init(): Promise<void> {
     opt.textContent = cfg.name;
     filterRepoEl.appendChild(opt);
   }
+  populateCommitConfigSelect(configs);
 
   // Toggle filter panel visibility
   filterBtn.addEventListener("click", () => {
@@ -921,6 +1044,29 @@ async function init(): Promise<void> {
     filterRepo = filterRepoEl.value;
     updateFilterButtonState();
     await applyFilters();
+  });
+
+  // ── Commit filter panel toggle ──────────────────────────────────────────
+  const commitFilterBtn = document.getElementById("btn-commit-filter")!;
+  const commitFilterPanel = document.getElementById("commit-filter-panel")!;
+
+  commitFilterBtn.addEventListener("click", () => {
+    const isHidden = commitFilterPanel.classList.toggle("hidden");
+    commitFilterBtn.setAttribute("aria-expanded", String(!isHidden));
+    if (!isHidden && commitFilterRepo !== "") {
+      commitFilterBtn.classList.add("btn-filter-active");
+    } else if (isHidden && commitFilterRepo === "") {
+      commitFilterBtn.classList.remove("btn-filter-active");
+    }
+  });
+
+  const commitConfigSelectEl = document.getElementById(
+    "filter-commit-config",
+  ) as HTMLSelectElement;
+  commitConfigSelectEl.addEventListener("change", () => {
+    commitFilterRepo = commitConfigSelectEl.value;
+    updateCommitFilterBtnState();
+    renderCommitList();
   });
 }
 

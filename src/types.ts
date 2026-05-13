@@ -9,6 +9,15 @@ export type Deploy = {
   finished_at: number | null;
 };
 
+export type Commit = {
+  id: number;
+  commit_sha: string;
+  commit_repo: string;
+  commit_branch: string;
+  message: string;
+  timestamp: number;
+};
+
 export type Log = {
   id: number;
   deploy_id: number;
@@ -26,4 +35,5 @@ export type Settings = {
   path: string;
   branch: string;
   steps?: string[];
+  auto?: boolean;
 };

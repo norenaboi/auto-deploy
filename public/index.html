@@ -27,7 +27,7 @@
                         <span class="panel-title">Deploys</span>
                         <div class="panel-header-actions">
                             <button
-                                id="btn-filter"
+                                id="btn-deploy-filter"
                                 class="btn btn-ghost btn-sm"
                                 aria-expanded="false"
                                 title="Filter deploys"
@@ -42,7 +42,7 @@
                             </button>
                         </div>
                     </div>
-                    <div id="filter-panel" class="filter-panel hidden">
+                    <div id="deploy-filter-panel" class="filter-panel hidden">
                         <div class="filter-row">
                             <span class="filter-row-label">Type</span>
                             <div class="filter-toggles">
@@ -79,6 +79,34 @@
                         class="log-output"
                     ><span class="log-placeholder">&#8592; Select a deploy to view logs</span></pre>
                 </section>
+
+                <aside class="commit-list-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Recent Updates</span>
+                        <div class="panel-header-actions">
+                            <button
+                                id="btn-commit-filter"
+                                class="btn btn-ghost btn-sm"
+                                aria-expanded="false"
+                                title="Filter commits"
+                            >
+                                &#9663; Filter
+                            </button>
+                        </div>
+                    </div>
+                    <div id="commit-filter-panel" class="filter-panel hidden">
+                        <div class="filter-row">
+                            <span class="filter-row-label">Repo</span>
+                            <select
+                                id="filter-commit-config"
+                                class="filter-select"
+                            >
+                                <option value="">All repos</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="commit-list" class="commit-list"></div>
+                </aside>
             </main>
         </div>
 

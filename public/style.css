@@ -68,10 +68,10 @@ body {
     align-items: center;
 }
 
-/* ── Dashboard (two-column) ──────────────────────────────────────────────── */
+/* ── Dashboard (three-column) ───────────────────────────────────────────── */
 .dashboard {
     display: grid;
-    grid-template-columns: 288px 1fr;
+    grid-template-columns: 288px 1fr 288px;
     overflow: hidden;
     height: 100%;
 }
@@ -82,6 +82,78 @@ body {
     flex-direction: column;
     border-right: 1px solid var(--border);
     overflow: hidden;
+}
+
+/* ── Commit list panel ─────────────────────────────────────────────── */
+.commit-list-panel {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.commit-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.commit-card {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+}
+
+.commit-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.commit-config {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.commit-sha {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: var(--border);
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.commit-message {
+    font-size: 0.8rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+}
+
+.commit-card-bottom {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.commit-branch {
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+}
+
+.commit-time {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-left: auto;
 }
 
 .panel-header {
@@ -485,6 +557,32 @@ body {
 
 .btn-delete-confirming {
     background: color-mix(in srgb, var(--danger) 80%, #000) !important;
+}
+
+.config-auto-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+}
+
+.config-auto-on {
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--success) 40%, transparent);
+    background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.config-auto-off {
+    color: var(--text-muted);
+    border-color: var(--border);
+    background: transparent;
+}
+
+.auto-deploy-toggle {
+    margin-top: 0.5rem;
 }
 
 .config-list-info {

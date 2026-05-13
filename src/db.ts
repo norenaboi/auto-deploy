@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
-import { Deploy, Log } from "./types";
+import { Deploy, Log, Commit } from "./types";
 
 const DB_DIR = path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DB_DIR, "database.db");
@@ -16,6 +16,17 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS commits (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    commit_sha      TEXT    NOT NULL UNIQUE,
+    commit_repo     TEXT    NOT NULL,
+    commit_branch   TEXT    NOT NULL,
+    message         TEXT    NOT NULL,
+    timestamp       INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(commit_repo);
+
   CREATE TABLE IF NOT EXISTS deploys (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     repo        TEXT    NOT NULL,
@@ -89,6 +100,25 @@ const stmtUpdateDeployStatus = db.prepare<{
   `UPDATE deploys SET status = @status, finished_at = @finished_at WHERE id = @id`,
 );
 
+const stmtInsertCommit = db.prepare<{
+  commit_sha: string;
+  commit_repo: string;
+  commit_branch: string;
+  message: string;
+  timestamp: number;
+}>(
+  `INSERT OR IGNORE INTO commits (commit_sha, commit_repo, commit_branch, message, timestamp)
+   VALUES (@commit_sha, @commit_repo, @commit_branch, @message, @timestamp)`,
+);
+
+const stmtGetAllCommits = db.prepare<[], Commit>(
+  `SELECT * FROM commits ORDER BY timestamp DESC`,
+);
+
+const stmtGetCommitsByRepo = db.prepare<[string], Commit>(
+  `SELECT * FROM commits WHERE commit_repo = ? ORDER BY timestamp DESC`,
+);
+
 export function createDeploy(deploy: Deploy): Deploy {
   try {
     const { lastInsertRowid } = stmtInsertDeploy.run({
@@ -151,4 +181,16 @@ export function updateDeployStatus(
   finished_at: number | null,
 ): void {
   stmtUpdateDeployStatus.run({ id, status, finished_at });
+}
+
+export function createCommit(commit: Omit<Commit, "id">): void {
+  stmtInsertCommit.run(commit);
+}
+
+export function getAllCommits(): Commit[] {
+  return stmtGetAllCommits.all();
+}
+
+export function getCommitsByRepo(repo: string): Commit[] {
+  return stmtGetCommitsByRepo.all(repo);
 }
