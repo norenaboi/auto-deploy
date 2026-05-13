@@ -8,7 +8,6 @@ const queue = new Map<string, Deploy[]>();
 const running = new Map<string, boolean>();
 export const deployEmitters = new Map<number, EventEmitter>();
 const runningProcesses = new Map<number, ChildProcess>();
-const backgroundProcesses = new Map<string, ChildProcess>();
 
 export function queueDeploy(config: Config, sha256?: string) {
   let settings = config.settings;
@@ -60,21 +59,6 @@ export function deploy(deployObj: Deploy, config: Config) {
     return;
   }
 
-  const prevBg = backgroundProcesses.get(config.name);
-  if (prevBg) {
-    const killLine = `[runner] Killing previous background process (pid ${prevBg.pid}) before new deploy.`;
-    db.createLog(deployId, killLine, Date.now());
-    emitter.emit("log", killLine);
-    try {
-      process.kill(-prevBg.pid!, "SIGTERM");
-    } catch {
-      try {
-        prevBg.kill("SIGTERM");
-      } catch {}
-    }
-    backgroundProcesses.delete(config.name);
-  }
-
   stepRunner(deployId, steps, dirPath, config.name, emitter, finalize);
 
   function finalize(status: "success" | "failed" | "stopped") {
@@ -114,6 +98,10 @@ function spawnShell(
   return proc;
 }
 
+export function pm2NameFor(repoName: string): string {
+  return `auto-deploy-${repoName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
 function stepRunner(
   deployId: number,
   steps: string[],
@@ -122,10 +110,12 @@ function stepRunner(
   emitter: EventEmitter,
   finalize: (status: "success" | "failed" | "stopped") => void,
 ): void {
-  const bgIndex = steps.findIndex((s) => s.trimStart().startsWith("&"));
-  const fgSteps = bgIndex === -1 ? steps : steps.slice(0, bgIndex);
-  const bgStep =
-    bgIndex === -1 ? null : steps[bgIndex].trimStart().slice(1).trimStart();
+  const pm2Index = steps.findIndex((s) => s.trimStart().startsWith("pm2:"));
+  const fgSteps = pm2Index === -1 ? steps : steps.slice(0, pm2Index);
+  const pm2Exec =
+    pm2Index === -1
+      ? null
+      : steps[pm2Index].trimStart().slice("pm2:".length).trim();
 
   function handleChunk(chunk: Buffer) {
     const line = chunk.toString();
@@ -133,62 +123,58 @@ function stepRunner(
     emitter.emit("log", line);
   }
 
-  function launchBackground() {
-    if (!bgStep) {
+  function launchPM2() {
+    if (!pm2Exec) {
       finalize("success");
       return;
     }
-    const bgHeader = `\n[step ${steps.length}/${steps.length}] ${bgStep} (background)\n`;
-    db.createLog(deployId, bgHeader, Date.now());
-    emitter.emit("log", bgHeader);
 
-    const bg = spawn("sh", ["-c", bgStep], {
+    const pm2Name = pm2NameFor(repoName);
+    const stepLabel = `[step ${steps.length}/${steps.length}] pm2: ${pm2Exec}`;
+
+    db.createLog(deployId, `\n${stepLabel}\n`, Date.now());
+    emitter.emit("log", `\n${stepLabel}\n`);
+
+    // PM2 can't run `npm run x` directly — it treats the last word as a file path.
+    // For npm commands, use `pm2 start npm --name <n> -- run <script>` instead.
+    const npmMatch = pm2Exec.match(/^npm\s+(?:run\s+)?(\S+)$/);
+    const pm2Start = npmMatch
+      ? `pm2 start npm --name ${pm2Name} -- run ${npmMatch[1]}`
+      : `pm2 start ${pm2Exec} --name ${pm2Name}`;
+
+    const script = [
+      `pm2 delete ${pm2Name} 2>/dev/null || true`,
+      pm2Start,
+      "pm2 save --force",
+    ].join(" && ");
+
+    const proc = spawnShell(
+      script,
       cwd,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    backgroundProcesses.set(repoName, bg);
+      handleChunk,
+      (err) => {
+        const errLine = `[spawn error] ${err.message}`;
+        db.createLog(deployId, errLine, Date.now());
+        emitter.emit("log", errLine);
+        finalize("failed");
+      },
+      (exitCode) => {
+        runningProcesses.delete(deployId);
+        if (exitCode === null) {
+          finalize("stopped");
+        } else if (exitCode !== 0) {
+          finalize("failed");
+        } else {
+          finalize("success");
+        }
+      },
+    );
 
-    let capturing = true;
-
-    function stopCapturing() {
-      if (!capturing) return;
-      capturing = false;
-      bg.stdout?.destroy();
-      bg.stderr?.destroy();
-    }
-
-    const captureTimeout = setTimeout(stopCapturing, 5000);
-
-    function onBgChunk(chunk: Buffer) {
-      if (!capturing) return;
-      const line = chunk.toString();
-      db.createLog(deployId, line, Date.now());
-      emitter.emit("log", line);
-    }
-    bg.stdout?.on("data", onBgChunk);
-    bg.stderr?.on("data", onBgChunk);
-
-    bg.on("exit", (code) => {
-      clearTimeout(captureTimeout);
-      stopCapturing();
-      if (code !== null && code !== 0) {
-        const exitLine = `[runner] Background process exited with code ${code}.`;
-        db.createLog(deployId, exitLine, Date.now());
-        emitter.emit("log", exitLine);
-      }
-      if (backgroundProcesses.get(repoName) === bg) {
-        backgroundProcesses.delete(repoName);
-      }
-    });
-
-    bg.unref();
-
-    finalize("success");
+    runningProcesses.set(deployId, proc);
   }
 
   if (fgSteps.length === 0) {
-    launchBackground();
+    launchPM2();
     return;
   }
 
@@ -213,7 +199,7 @@ function stepRunner(
       } else if (exitCode !== 0) {
         finalize("failed");
       } else {
-        launchBackground();
+        launchPM2();
       }
     },
   );

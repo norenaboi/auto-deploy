@@ -8,6 +8,8 @@ interface ConfigEntry {
   branch: string;
   steps?: string[];
   auto: boolean;
+  appRunning?: boolean;
+  dockerRunning?: boolean;
 }
 
 interface Deploy {
@@ -134,6 +136,20 @@ async function saveConfig(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+async function killApp(name: string): Promise<void> {
+  const res = await fetch(`/app/stop/${encodeURIComponent(name)}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+async function stopDockerApp(name: string): Promise<void> {
+  const res = await fetch(`/app/docker-stop/${encodeURIComponent(name)}`, {
+    method: "POST",
   });
   if (!res.ok) throw new Error(await res.text());
 }
@@ -487,7 +503,7 @@ function openConfigModal(prefill?: ConfigEntry): void {
   type Preset = "node" | "docker";
   let activePreset: Preset = "node";
   if (prefill) {
-    if (!prefill.steps || prefill.steps[0]?.startsWith("docker compose")) {
+    if (prefill.steps && prefill.steps[0]?.startsWith("docker compose")) {
       activePreset = "docker";
     }
   }
@@ -658,7 +674,7 @@ function openConfigModal(prefill?: ConfigEntry): void {
     const gitPull = pullFlag === "none" ? "git pull" : `git pull ${pullFlag}`;
     const steps: string[] = [gitPull, installMode];
     if (includeBuild) steps.push("npm run build");
-    steps.push("& npm run start");
+    steps.push("pm2: npm start");
     return steps;
   }
 
@@ -750,6 +766,13 @@ async function openConfigListModal(): Promise<void> {
       ? `<p class="config-list-empty">No configs yet. Add one below.</p>`
       : "";
 
+  // Keep a lookup map so the full config (including steps) is available when
+  // the Edit button is clicked, without trying to serialise an array into a
+  // data-* attribute.
+  const configMap = new Map<string, ConfigEntry>(
+    configs.map((c) => [c.name, c]),
+  );
+
   const rows = configs
     .map(
       (c) => `
@@ -761,6 +784,8 @@ async function openConfigListModal(): Promise<void> {
         <div class="config-list-row-actions">
           <span class="config-auto-badge ${c.auto ? "config-auto-on" : "config-auto-off"}">${c.auto ? "Auto" : "Manual"}</span>
           <button type="button" class="btn btn-secondary btn-sm btn-edit-config">Edit</button>
+          ${c.appRunning ? `<button type="button" class="btn btn-warning btn-sm btn-kill-app">Kill App</button>` : ""}
+          ${c.dockerRunning ? `<button type="button" class="btn btn-warning btn-sm btn-stop-docker">Stop App</button>` : ""}
           <button type="button" class="btn btn-danger btn-sm btn-delete-config">Delete</button>
         </div>
       </div>`,
@@ -788,12 +813,121 @@ async function openConfigListModal(): Promise<void> {
       const row = (btn as HTMLElement).closest<HTMLElement>(
         ".config-list-row",
       )!;
-      openConfigModal({
-        name: row.dataset.name!,
+      const name = row.dataset.name!;
+      // Use the full config from the map so that steps are preserved.
+      const fullConfig = configMap.get(name) ?? {
+        name,
         path: row.dataset.path!,
         branch: row.dataset.branch!,
         auto: row.dataset.auto !== "false",
-      });
+      };
+      openConfigModal(fullConfig);
+    });
+  });
+
+  container.querySelectorAll(".btn-kill-app").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = (btn as HTMLElement).closest<HTMLElement>(
+        ".config-list-row",
+      )!;
+      const name = row.dataset.name!;
+
+      const killBtn = btn as HTMLButtonElement;
+      if (killBtn.dataset.confirming === "true") return;
+      killBtn.dataset.confirming = "true";
+      killBtn.textContent = "Confirm?";
+      killBtn.classList.add("btn-delete-confirming");
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-ghost btn-sm";
+      cancelBtn.textContent = "Cancel";
+      killBtn.insertAdjacentElement("afterend", cancelBtn);
+
+      const reset = () => {
+        killBtn.textContent = "Kill App";
+        killBtn.classList.remove("btn-delete-confirming");
+        delete killBtn.dataset.confirming;
+        cancelBtn.remove();
+      };
+
+      cancelBtn.addEventListener("click", reset);
+
+      killBtn.addEventListener(
+        "click",
+        async () => {
+          killBtn.disabled = true;
+          cancelBtn.disabled = true;
+          try {
+            await killApp(name);
+            cancelBtn.remove();
+            killBtn.remove();
+          } catch (e: any) {
+            reset();
+            killBtn.disabled = false;
+            const errEl = document.createElement("span");
+            errEl.className = "modal-error";
+            errEl.style.fontSize = "0.72rem";
+            errEl.textContent = e.message ?? "Kill failed";
+            row.insertAdjacentElement("afterend", errEl);
+            setTimeout(() => errEl.remove(), 4000);
+          }
+        },
+        { once: true },
+      );
+    });
+  });
+
+  container.querySelectorAll(".btn-stop-docker").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = (btn as HTMLElement).closest<HTMLElement>(
+        ".config-list-row",
+      )!;
+      const name = row.dataset.name!;
+
+      const stopBtn = btn as HTMLButtonElement;
+      if (stopBtn.dataset.confirming === "true") return;
+      stopBtn.dataset.confirming = "true";
+      stopBtn.textContent = "Confirm?";
+      stopBtn.classList.add("btn-delete-confirming");
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-ghost btn-sm";
+      cancelBtn.textContent = "Cancel";
+      stopBtn.insertAdjacentElement("afterend", cancelBtn);
+
+      const reset = () => {
+        stopBtn.textContent = "Stop App";
+        stopBtn.classList.remove("btn-delete-confirming");
+        delete stopBtn.dataset.confirming;
+        cancelBtn.remove();
+      };
+
+      cancelBtn.addEventListener("click", reset);
+
+      stopBtn.addEventListener(
+        "click",
+        async () => {
+          stopBtn.disabled = true;
+          cancelBtn.disabled = true;
+          try {
+            await stopDockerApp(name);
+            cancelBtn.remove();
+            stopBtn.remove();
+          } catch (e: any) {
+            reset();
+            stopBtn.disabled = false;
+            const errEl = document.createElement("span");
+            errEl.className = "modal-error";
+            errEl.style.fontSize = "0.72rem";
+            errEl.textContent = e.message ?? "Stop failed";
+            row.insertAdjacentElement("afterend", errEl);
+            setTimeout(() => errEl.remove(), 4000);
+          }
+        },
+        { once: true },
+      );
     });
   });
 

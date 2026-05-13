@@ -12,6 +12,7 @@ A webhook-driven deployment server. Receives GitHub push events, verifies the HM
 - Live log streaming over SSE
 - Full deploy history with status tracking (pending, running, success, failed, stopped)
 - Stop a running deploy from the UI
+- Kill a running PM2 app or stop a running Docker Compose app from the config list
 - Session-based authentication with brute-force rate limiting
 
 ## Stack
@@ -21,10 +22,13 @@ A webhook-driven deployment server. Receives GitHub push events, verifies the HM
 - **Database:** SQLite (better-sqlite3)
 - **Frontend:** Vanilla JS + HTML/CSS
 
-## Requirements
+## Requirements (depending on which you will use)
 
+### Node
 - Node.js v18+
-- Docker (optional)
+- PM2 (`npm install -g pm2`) — required for the `pm2:` step
+### Docker
+- Docker
 
 ## Installation
 
@@ -36,7 +40,7 @@ Edit `docker-compose.yml` to set the host port, then:
 docker compose up -d --build
 ```
 
-The container uses the Docker CLI only. It communicates with the host Docker daemon via the socket mounted at `/var/run/docker.sock`. Project paths you configure must be host paths - the daemon resolves them on the host filesystem. The `./data` directory is mounted into the container so the database and config persist across restarts.
+The container uses the Docker CLI only. It communicates with the host Docker daemon via the socket mounted at `/var/run/docker.sock`. Project paths you configure must be host paths. The daemon resolves them on the host filesystem. The `./data` directory is mounted into the container so the database and config persist across restarts.
 
 ### Linux (bare metal)
 
@@ -74,25 +78,24 @@ NODE_ENV=production
 
 ## Deployment Pipeline
 
-Each repo config includes a `steps` array that defines the commands to run on deploy. Steps are executed sequentially - if any step fails, the deploy stops and is marked as failed.
+Each repo config includes a `steps` array that defines the commands to run on deploy. Steps are executed sequentially — if any step fails, the deploy stops and is marked as failed.
 
-A step prefixed with `&` is treated as a **background step**. It is launched as a detached process after all foreground steps succeed. Only one background step is allowed per config and it must be last.
-
-Before a new deploy starts, any background process from a previous deploy of the same repo is killed.
+A step prefixed with `pm2:` is treated as a **PM2 step**. It must be last. After all preceding steps succeed, auto-deploy will delete any existing PM2 process for this repo and start a fresh one under the name `auto-deploy-<repo-name>`. The process list is then saved with `pm2 save` so it survives a server reboot (see [PM2 setup](#pm2-setup) below).
 
 ### Node deploy example
 
 ```
 git pull
-npm install
+npm ci
 npm run build
-& npm run start
+pm2: npm run start
 ```
 
 ### Docker deploy example
 
 ```
 git pull
+docker compose pull
 docker compose up -d --build
 ```
 
@@ -100,16 +103,38 @@ docker compose up -d --build
 
 Only the following commands are accepted to prevent arbitrary code execution:
 
-| Step | Notes |
+#### Node
+| Step | Optional |
 |---|---|
-| `git pull` | Optional `--rebase` or `--force` flag |
-| `npm install` | |
-| `npm ci` | |
-| `npm run build` | |
-| `docker compose pull` | |
-| `docker compose down` | |
-| `docker compose up -d --build` | Optional `--no-cache` flag |
-| `& npm run start` | Background step - must be last |
+| `git pull` | `--rebase` or `--force` flag |
+| `npm install` | Replacement `npm ci` |
+| `npm run build` | Optional |
+| `pm2: npm run start` | |
+
+#### Docker
+| Step | Optional |
+|---|---|
+| `docker compose pull` | Optional |
+| `docker compose down` | Optional |
+| `docker compose up -d --build` |`--no-cache` flag |
+
+## PM2 Setup
+
+PM2 must be installed globally on the server before using the `pm2:` step:
+
+```
+npm install -g pm2
+```
+
+To have PM2 restore your apps automatically after a server reboot, run this once over SSH as your deploy user:
+
+```
+pm2 startup
+```
+
+This prints a `sudo` command, copy and run it. You only need to do this once per server. From then on, `pm2 save` (which auto-deploy runs after every successful deploy) will keep the process list up to date with no further root access required.
+
+If you skip `pm2 startup`, apps will still be managed by PM2 and will auto-restart on crashes. They just won't come back after a full server reboot.
 
 ## GitHub Webhook Setup
 
@@ -141,6 +166,8 @@ All endpoints require a valid session cookie except `/webhook/:repo` (which has 
 | `GET` | `/deploy/id/:id` | Single deploy by ID |
 | `POST` | `/deploy/:name` | Manually trigger a deploy |
 | `POST` | `/deploy/stop/:deployId` | Stop a running deploy |
+| `POST` | `/app/stop/:name` | Kill a repo's PM2 process |
+| `POST` | `/app/docker-stop/:name` | Run `docker compose down` for a repo |
 | `POST` | `/config` | Create or update a repo config |
 | `DELETE` | `/config/:name` | Delete a repo config |
 | `GET` | `/configs` | List all repo configs |

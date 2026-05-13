@@ -2,9 +2,10 @@ import express, { Router, Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
+import { execFile } from "child_process";
 import * as db from "./db";
 import { Config, Settings } from "./types";
-import { queueDeploy, deployEmitters, stopDeploy } from "./runner";
+import { queueDeploy, deployEmitters, stopDeploy, pm2NameFor } from "./runner";
 import { verifySession } from "./middleware";
 export const router = Router();
 export const webhookRouter = Router();
@@ -190,6 +191,46 @@ router.post("/deploy/:name", verifySession, (req: Request, res: Response) => {
   }
 });
 
+router.post("/app/stop/:name", verifySession, (req: Request, res: Response) => {
+  if (typeof req.params.name !== "string") {
+    return res.status(400).send("Invalid repo name");
+  }
+  const pm2Name = pm2NameFor(req.params.name);
+  execFile("pm2", ["delete", pm2Name], (err, _stdout, stderr) => {
+    if (err) {
+      return res.status(500).send(stderr || err.message);
+    }
+    return res.send("OK");
+  });
+});
+
+router.post(
+  "/app/docker-stop/:name",
+  verifySession,
+  (req: Request, res: Response) => {
+    if (typeof req.params.name !== "string") {
+      return res.status(400).send("Invalid repo name");
+    }
+    let config: Config;
+    try {
+      config = getConfig(req.params.name);
+    } catch (e: any) {
+      return res.status(404).send(e.message);
+    }
+    execFile(
+      "docker",
+      ["compose", "down"],
+      { cwd: config.settings.path },
+      (err, _stdout, stderr) => {
+        if (err) {
+          return res.status(500).send(stderr || err.message);
+        }
+        return res.send("OK");
+      },
+    );
+  },
+);
+
 router.delete("/config/:name", verifySession, (req: Request, res: Response) => {
   if (typeof req.params.name !== "string") {
     return res.status(400).send("Invalid repo name");
@@ -214,7 +255,50 @@ router.get("/configs", verifySession, (req: Request, res: Response) => {
       auto: settings.auto !== false,
     }),
   );
-  return res.json(configs);
+
+  const isDockerConfig = (steps?: string[]) =>
+    steps?.some((s) => s.startsWith("docker compose")) ?? false;
+
+  // Check PM2 for node configs
+  execFile("pm2", ["jlist"], (_err, stdout) => {
+    let runningNames = new Set<string>();
+    try {
+      const list: { name: string; pm2_env?: { status?: string } }[] =
+        JSON.parse(stdout || "[]");
+      runningNames = new Set(
+        list.filter((p) => p.pm2_env?.status === "online").map((p) => p.name),
+      );
+    } catch {}
+
+    // Check docker compose ps for docker configs in parallel
+    const dockerConfigs = configs.filter((c) => isDockerConfig(c.steps));
+    let pending = dockerConfigs.length;
+    const dockerRunning = new Set<string>();
+
+    function respond() {
+      return res.json(
+        configs.map((c) => ({
+          ...c,
+          appRunning: runningNames.has(pm2NameFor(c.name)),
+          dockerRunning: dockerRunning.has(c.name),
+        })),
+      );
+    }
+
+    if (pending === 0) return respond();
+
+    for (const c of dockerConfigs) {
+      execFile(
+        "docker",
+        ["compose", "ps", "-q"],
+        { cwd: c.path },
+        (_err, stdout) => {
+          if (stdout.trim().length > 0) dockerRunning.add(c.name);
+          if (--pending === 0) respond();
+        },
+      );
+    }
+  });
 });
 
 const ALLOWED_STEPS = [
@@ -223,7 +307,7 @@ const ALLOWED_STEPS = [
   /^npm run build$/,
   /^docker compose (pull|down)$/,
   /^docker compose up -d --build(\s--no-cache)?$/,
-  /^& npm run start$/,
+  /^pm2:\s*.+$/,
 ];
 
 function validateSteps(steps: unknown): string | null {

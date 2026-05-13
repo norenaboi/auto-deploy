@@ -423,6 +423,20 @@ body {
     cursor: not-allowed;
 }
 
+.btn-warning {
+    background: var(--warning);
+    color: #000;
+}
+
+.btn-warning:hover {
+    background: color-mix(in srgb, var(--warning) 80%, #000);
+}
+
+.btn-warning:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .log-header-actions {
     display: flex;
     align-items: center;
@@ -454,7 +468,7 @@ body {
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) * 1.5);
     padding: 1.75rem;
-    width: 420px;
+    width: 650px;
     max-width: calc(100vw - 2rem);
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
 }
@@ -520,7 +534,6 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    max-height: 340px;
     overflow-y: auto;
     margin-bottom: 0.25rem;
 }
