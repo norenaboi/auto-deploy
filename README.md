@@ -99,24 +99,38 @@ docker compose pull
 docker compose up -d --build
 ```
 
+### Static site deploy example
+
+```
+git pull
+npx serve -l 3000
+```
+
 ### Allowed steps
 
 Only the following commands are accepted to prevent arbitrary code execution:
 
 #### Node
-| Step | Optional |
+| Step | Optional Flags |
 |---|---|
-| `git pull` | `--rebase` or `--force` flag |
-| `npm install` | Replacement `npm ci` |
+| `git pull` | `--rebase`, `--force` |
+| `npm install` | Can use `npm ci` instead |
 | `npm run build` | Optional |
 | `pm2: npm run start` | |
 
 #### Docker
-| Step | Optional |
+| Step | Optional Flags |
 |---|---|
-| `docker compose pull` | Optional |
-| `docker compose down` | Optional |
-| `docker compose up -d --build` |`--no-cache` flag |
+| `git pull` | `--rebase`, `--force` |
+| `docker compose pull` | |
+| `docker compose down` | |
+| `docker compose up -d --build` | |
+
+#### Static
+| Step | Optional Flags |
+|---|---|
+| `git pull` | `--rebase`, `--force` |
+| `npx serve -l <port>` | |
 
 ## PM2 Setup
 

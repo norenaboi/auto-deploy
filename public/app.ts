@@ -500,11 +500,13 @@ function openConfigModal(prefill?: ConfigEntry): void {
   const initAuto = prefill ? prefill.auto !== false : true;
 
   // ── Detect initial preset from prefill steps ──────────────────────────────
-  type Preset = "node" | "docker";
+  type Preset = "node" | "docker" | "static";
   let activePreset: Preset = "node";
   if (prefill) {
     if (prefill.steps && prefill.steps[0]?.startsWith("docker compose")) {
       activePreset = "docker";
+    } else if (prefill.steps && prefill.steps[0]?.startsWith("npx serve")) {
+      activePreset = "static";
     }
   }
 
@@ -526,13 +528,28 @@ function openConfigModal(prefill?: ConfigEntry): void {
   // ── Reverse-engineer Docker options from prefill steps ────────────────────
   let initDockerPull = false;
   let initDockerDown = false;
-  let initDockerNoCache = false;
 
   if (prefill?.steps && activePreset === "docker") {
     const steps = prefill.steps;
     initDockerPull = steps.includes("docker compose pull");
     initDockerDown = steps.includes("docker compose down");
-    initDockerNoCache = steps.some((s) => s.includes("--no-cache"));
+  }
+
+  // ── Reverse-engineer Static options from prefill steps ────────────────────
+  let initStaticPort = "3000";
+  let initStaticPullFlag: PullFlag = "none";
+
+  if (prefill?.steps && activePreset === "static") {
+    const steps = prefill.steps;
+    if (steps[0]?.startsWith("git pull")) {
+      if (steps[0].endsWith("--rebase")) initStaticPullFlag = "--rebase";
+      else if (steps[0].endsWith("--force")) initStaticPullFlag = "--force";
+    }
+    const serveStep = steps.find((s) => s.startsWith("npx serve"));
+    const serveMatch = serveStep?.match(/npx serve -l (\d+)/);
+    if (serveMatch) {
+      initStaticPort = serveMatch[1];
+    }
   }
 
   // ── Build the form element ────────────────────────────────────────────────
@@ -580,6 +597,7 @@ function openConfigModal(prefill?: ConfigEntry): void {
             <div class="preset-picker">
               <button type="button" class="btn-preset-pill${activePreset === "node" ? " active" : ""}" data-preset="node">Node</button>
               <button type="button" class="btn-preset-pill${activePreset === "docker" ? " active" : ""}" data-preset="docker">Docker</button>
+              <button type="button" class="btn-preset-pill${activePreset === "static" ? " active" : ""}" data-preset="static">Static</button>
             </div>
           </div>
 
@@ -618,10 +636,22 @@ function openConfigModal(prefill?: ConfigEntry): void {
                 <label class="check-label"><input type="checkbox" id="docker-down" ${initDockerDown ? "checked" : ""} /><span>compose down</span></label>
               </div>
             </div>
+          </div>
+
+          <!-- Static options -->
+          <div class="preset-options${activePreset !== "static" ? " hidden" : ""}" id="static-options">
             <div class="preset-option-row">
-              <span class="option-label">Build</span>
+              <span class="option-label">Git pull</span>
               <div class="option-controls">
-                <label class="check-label"><input type="checkbox" id="docker-no-cache" ${initDockerNoCache ? "checked" : ""} /><span>--no-cache</span></label>
+                <label class="radio-label"><input type="radio" name="static-pull-flag" value="none" ${initStaticPullFlag === "none" ? "checked" : ""} /><span>git pull</span></label>
+                <label class="radio-label"><input type="radio" name="static-pull-flag" value="--rebase" ${initStaticPullFlag === "--rebase" ? "checked" : ""} /><span>--rebase</span></label>
+                <label class="radio-label"><input type="radio" name="static-pull-flag" value="--force" ${initStaticPullFlag === "--force" ? "checked" : ""} /><span>--force</span></label>
+              </div>
+            </div>
+            <div class="preset-option-row">
+              <span class="option-label">Port</span>
+              <div class="option-controls">
+                <input type="number" id="static-port" min="1" max="9999" value="${initStaticPort}" placeholder="3000" style="width: 80px;" />
               </div>
             </div>
           </div>
@@ -651,13 +681,23 @@ function openConfigModal(prefill?: ConfigEntry): void {
         form.querySelector<HTMLInputElement>("#docker-pull")?.checked ?? false;
       const down =
         form.querySelector<HTMLInputElement>("#docker-down")?.checked ?? false;
-      const noCache =
-        form.querySelector<HTMLInputElement>("#docker-no-cache")?.checked ??
-        false;
       const steps: string[] = [];
       if (pull) steps.push("docker compose pull");
       if (down) steps.push("docker compose down");
-      steps.push(`docker compose up -d --build${noCache ? " --no-cache" : ""}`);
+      steps.push("docker compose up -d --build");
+      return steps;
+    }
+    if (activePreset === "static") {
+      const portInput = form.querySelector<HTMLInputElement>("#static-port");
+      const port = portInput?.value || "3000";
+      const pullFlagEl = form.querySelector<HTMLInputElement>(
+        "input[name='static-pull-flag']:checked",
+      );
+      const pullFlag = pullFlagEl?.value ?? "none";
+      const steps: string[] = [];
+      const gitPull = pullFlag === "none" ? "git pull" : `git pull ${pullFlag}`;
+      steps.push(gitPull);
+      steps.push(`npx serve -l ${port}`);
       return steps;
     }
     // Node preset
@@ -701,6 +741,9 @@ function openConfigModal(prefill?: ConfigEntry): void {
         form
           .querySelector<HTMLElement>("#docker-options")!
           .classList.toggle("hidden", activePreset !== "docker");
+        form
+          .querySelector<HTMLElement>("#static-options")!
+          .classList.toggle("hidden", activePreset !== "static");
         updatePreview();
       });
     });
@@ -713,6 +756,9 @@ function openConfigModal(prefill?: ConfigEntry): void {
   form
     .querySelector("#docker-options")!
     .addEventListener("change", updatePreview);
+  form
+    .querySelector("#static-options")!
+    .addEventListener("input", updatePreview);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   form.addEventListener("submit", async (e) => {

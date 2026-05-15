@@ -306,8 +306,9 @@ const ALLOWED_STEPS = [
   /^npm (install|ci)$/,
   /^npm run build$/,
   /^docker compose (pull|down)$/,
-  /^docker compose up -d --build(\s--no-cache)?$/,
+  /^docker compose up -d --build$/,
   /^pm2:\s*.+$/,
+  /^npx serve(\s+-[lps]\s+\d{1,5})*(\s+--[a-z-]+)*$/,
 ];
 
 function validateSteps(steps: unknown): string | null {

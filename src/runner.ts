@@ -110,12 +110,23 @@ function stepRunner(
   emitter: EventEmitter,
   finalize: (status: "success" | "failed" | "stopped") => void,
 ): void {
-  const pm2Index = steps.findIndex((s) => s.trimStart().startsWith("pm2:"));
+  // Find PM2 or serve step (both run indefinitely)
+  const pm2Index = steps.findIndex((s) => {
+    const trimmed = s.trimStart();
+    return trimmed.startsWith("pm2:") || trimmed.startsWith("npx serve");
+  });
   const fgSteps = pm2Index === -1 ? steps : steps.slice(0, pm2Index);
-  const pm2Exec =
-    pm2Index === -1
-      ? null
-      : steps[pm2Index].trimStart().slice("pm2:".length).trim();
+
+  let pm2Exec: string | null = null;
+  if (pm2Index !== -1) {
+    const step = steps[pm2Index].trimStart();
+    if (step.startsWith("pm2:")) {
+      pm2Exec = step.slice("pm2:".length).trim();
+    } else if (step.startsWith("npx serve")) {
+      // Treat npx serve as a PM2 step automatically
+      pm2Exec = step;
+    }
+  }
 
   function handleChunk(chunk: Buffer) {
     const line = chunk.toString();
@@ -138,9 +149,19 @@ function stepRunner(
     // PM2 can't run `npm run x` directly — it treats the last word as a file path.
     // For npm commands, use `pm2 start npm --name <n> -- run <script>` instead.
     const npmMatch = pm2Exec.match(/^npm\s+(?:run\s+)?(\S+)$/);
-    const pm2Start = npmMatch
-      ? `pm2 start npm --name ${pm2Name} -- run ${npmMatch[1]}`
-      : `pm2 start ${pm2Exec} --name ${pm2Name}`;
+    let pm2Start: string;
+    if (npmMatch) {
+      pm2Start = `pm2 start npm --name ${pm2Name} -- run ${npmMatch[1]}`;
+    } else if (pm2Exec.startsWith("npx serve")) {
+      // For npx serve, we need to use -- to pass arguments
+      const serveMatch = pm2Exec.match(/^npx serve(.*)$/);
+      const serveArgs = serveMatch ? serveMatch[1].trim() : "";
+      pm2Start = serveArgs
+        ? `pm2 start npx --name ${pm2Name} -- serve ${serveArgs}`
+        : `pm2 start npx --name ${pm2Name} -- serve`;
+    } else {
+      pm2Start = `pm2 start ${pm2Exec} --name ${pm2Name}`;
+    }
 
     const script = [
       `pm2 delete ${pm2Name} 2>/dev/null || true`,
