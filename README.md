@@ -22,21 +22,47 @@ A webhook-driven deployment server. Receives GitHub push events, verifies the HM
 - **Database:** SQLite (better-sqlite3)
 - **Frontend:** Vanilla JS + HTML/CSS
 
-## Requirements (depending on which you will use)
+## Requirements
 
-### Node
 - Node.js v18+
-- PM2 (`npm install -g pm2`) — required for the `pm2:` step
-### Docker
-- Docker
+- PM2 (`npm install -g pm2`) — required for the `pm2:` step in Node/Static modes
+- Docker — required for Docker mode deployments
 
 ## Installation
 
-### Docker (recommended)
+### Linux (systemd service) — recommended
+
+This method runs auto-deploy as a systemd service that starts automatically on boot and restarts on crashes. It supports all deployment modes (Node, Docker, and Static).
+
+```bash
+bash install-service.sh
+```
+
+The script will:
+1. Install Node.js if not already installed
+2. Install dependencies and build the project
+3. Create and enable a systemd service
+4. Start the service automatically
+
+Make sure you have a `.env` file configured before running the installer (see [Configuration](#configuration)).
+
+**Managing the service:**
+
+```bash
+sudo systemctl status auto-deploy    # Check service status
+sudo systemctl stop auto-deploy      # Stop the service
+sudo systemctl start auto-deploy     # Start the service
+sudo systemctl restart auto-deploy   # Restart the service
+sudo journalctl -u auto-deploy -f    # View live logs
+```
+
+### Docker
+
+**Note:** Docker installation only supports Docker mode deployments. You cannot use Node or Static modes because PM2 commands cannot be executed on the host from inside the container.
 
 Edit `docker-compose.yml` to set the host port, then:
 
-```
+```bash
 docker compose up -d --build
 ```
 
@@ -44,15 +70,17 @@ The container uses the Docker CLI only. It communicates with the host Docker dae
 
 ### Linux (bare metal)
 
-```
+Runs the server directly without systemd service management:
+
+```bash
 bash run-linux.sh
 ```
 
-Installs Node.js if missing, builds the project, and starts the server.
+Installs Node.js if missing, builds the project, and starts the server. The server will stop when you close the terminal or press Ctrl+C.
 
 ### Manual
 
-```
+```bash
 npm install
 npm run build
 npm start
@@ -121,7 +149,6 @@ Only the following commands are accepted to prevent arbitrary code execution:
 #### Docker
 | Step | Optional Flags |
 |---|---|
-| `git pull` | `--rebase`, `--force` |
 | `docker compose pull` | |
 | `docker compose down` | |
 | `docker compose up -d --build` | |
@@ -132,7 +159,7 @@ Only the following commands are accepted to prevent arbitrary code execution:
 | `git pull` | `--rebase`, `--force` |
 | `npx serve -l <port>` | |
 
-## PM2 Setup
+## PM2 Setup (Required for node/static modes)
 
 PM2 must be installed globally on the server before using the `pm2:` step:
 
