@@ -18,11 +18,12 @@ db.pragma("foreign_keys = ON");
 db.exec(`
   CREATE TABLE IF NOT EXISTS commits (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    commit_sha      TEXT    NOT NULL UNIQUE,
+    commit_sha      TEXT    NOT NULL,
     commit_repo     TEXT    NOT NULL,
     commit_branch   TEXT    NOT NULL,
     message         TEXT    NOT NULL,
-    timestamp       INTEGER NOT NULL
+    timestamp       INTEGER NOT NULL,
+    UNIQUE (commit_repo, commit_sha)
   );
 
   CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(commit_repo);
@@ -31,11 +32,12 @@ db.exec(`
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     repo        TEXT    NOT NULL,
     branch      TEXT    NOT NULL,
-    commit_sha  TEXT    NOT NULL UNIQUE,
+    commit_sha  TEXT    NOT NULL,
     status      TEXT    NOT NULL,
     created_at  INTEGER DEFAULT NULL,
     started_at  INTEGER DEFAULT NULL,
-    finished_at INTEGER DEFAULT NULL
+    finished_at INTEGER DEFAULT NULL,
+    UNIQUE (repo, commit_sha)
   );
 
   CREATE TABLE IF NOT EXISTS logs (
@@ -47,6 +49,104 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_logs_deploy_id ON logs(deploy_id);
 `);
+
+type IndexListRow = { name: string; unique: number };
+type IndexInfoRow = { seqno: number; name: string };
+
+function hasUniqueIndex(table: "commits" | "deploys", columns: string[]): boolean {
+  const indexes = db
+    .prepare<[], IndexListRow>(`PRAGMA index_list("${table}")`)
+    .all();
+
+  return indexes.some((index) => {
+    if (index.unique !== 1) return false;
+    const indexedColumns = db
+      .prepare<[], IndexInfoRow>(`PRAGMA index_info("${index.name}")`)
+      .all()
+      .sort((a, b) => a.seqno - b.seqno)
+      .map((column) => column.name);
+    return indexedColumns.join("\0") === columns.join("\0");
+  });
+}
+
+function migrateGlobalCommitShaConstraints(): void {
+  const commitsNeedMigration = hasUniqueIndex("commits", ["commit_sha"]);
+  const deploysNeedMigration = hasUniqueIndex("deploys", ["commit_sha"]);
+  if (!commitsNeedMigration && !deploysNeedMigration) return;
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS logs_new;
+        DROP TABLE IF EXISTS deploys_new;
+        DROP TABLE IF EXISTS commits_new;
+
+        CREATE TABLE commits_new (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          commit_sha      TEXT    NOT NULL,
+          commit_repo     TEXT    NOT NULL,
+          commit_branch   TEXT    NOT NULL,
+          message         TEXT    NOT NULL,
+          timestamp       INTEGER NOT NULL,
+          UNIQUE (commit_repo, commit_sha)
+        );
+
+        CREATE TABLE deploys_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          repo        TEXT    NOT NULL,
+          branch      TEXT    NOT NULL,
+          commit_sha  TEXT    NOT NULL,
+          status      TEXT    NOT NULL,
+          created_at  INTEGER DEFAULT NULL,
+          started_at  INTEGER DEFAULT NULL,
+          finished_at INTEGER DEFAULT NULL,
+          UNIQUE (repo, commit_sha)
+        );
+
+        CREATE TABLE logs_new (
+          id        INTEGER PRIMARY KEY AUTOINCREMENT,
+          deploy_id INTEGER NOT NULL REFERENCES deploys_new(id) ON DELETE CASCADE,
+          line      TEXT    NOT NULL,
+          logged_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        INSERT INTO commits_new
+          (id, commit_sha, commit_repo, commit_branch, message, timestamp)
+        SELECT id, commit_sha, commit_repo, commit_branch, message, timestamp
+        FROM commits;
+
+        INSERT INTO deploys_new
+          (id, repo, branch, commit_sha, status, created_at, started_at, finished_at)
+        SELECT id, repo, branch, commit_sha, status, created_at, started_at, finished_at
+        FROM deploys;
+
+        INSERT INTO logs_new (id, deploy_id, line, logged_at)
+        SELECT id, deploy_id, line, logged_at FROM logs;
+
+        DROP TABLE logs;
+        DROP TABLE deploys;
+        DROP TABLE commits;
+
+        ALTER TABLE commits_new RENAME TO commits;
+        ALTER TABLE deploys_new RENAME TO deploys;
+        ALTER TABLE logs_new RENAME TO logs;
+
+        CREATE INDEX idx_commits_repo ON commits(commit_repo);
+        CREATE INDEX idx_logs_deploy_id ON logs(deploy_id);
+      `);
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+
+  const foreignKeyErrors = db.pragma("foreign_key_check") as unknown[];
+  if (foreignKeyErrors.length > 0) {
+    throw new Error("Database migration failed foreign key validation.");
+  }
+}
+
+migrateGlobalCommitShaConstraints();
 
 const stmtInsertDeploy = db.prepare<{
   repo: string;
